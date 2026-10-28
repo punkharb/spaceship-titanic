@@ -28,7 +28,8 @@ Last updated: 2026-10-28 · Status: In progress
 
 ## 4. Results
 - Self-test (synthetic data, 20 groups × 4 people, 75% transported): DummyClassifier accuracy 0.7500 ± 0.0000, ROC-AUC 0.5000 — matches the known answers.
-- No real model results yet (train.csv not in the repo).
+- Data added: train.csv 8,693 rows × 14 columns, 6,217 travel groups; test.csv 4,277 rows. `Transported` loads as bool, as `evaluate()` requires.
+- No real model results yet.
 
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
@@ -54,5 +55,4 @@ Last updated: 2026-10-28 · Status: In progress
 | Why report mean ± std? | Std across folds shows how stable a score is; a small difference within the std is not a real win. |
 
 ## 9. Open items / handover
-- Add `train.csv` and `test.csv` to the project folder.
 - Review and merge Role 2's `features.py`; later write `07_final_model.py` and run 01→07 clean.
