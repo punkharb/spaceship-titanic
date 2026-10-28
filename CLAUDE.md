@@ -163,7 +163,7 @@ What's not done yet and who needs what from me.
 
 ## Roles and responsibilities
 
-### Role 1 – Lead / integrator ([Name])
+### Role 1 – Lead / integrator ([Pun])
 *Best fit: the strongest coder.*
 
 **Does**
@@ -177,7 +177,7 @@ What's not done yet and who needs what from me.
 
 **Done when:** every script runs start to finish without errors, `results.csv` has one row per model, `submission.csv` has 4,277 rows in the right format, and the report is complete.
 
-### Role 2 – Data + baseline model ([Name])
+### Role 2 – Data + baseline model ([Champ])
 *Best fit: a strong coder.*
 
 **Does**
@@ -196,7 +196,7 @@ What's not done yet and who needs what from me.
 
 **Done when:** EDA findings and charts are saved, `features.py` is merged and reused by Roles 3 and 4, both baselines are in `results.csv`, and the report is complete.
 
-### Role 3 – Model B: Random Forest ([Name])
+### Role 3 – Model B: Random Forest ([Pat])
 *Best fit: medium coding level.*
 
 **Does**
@@ -208,7 +208,7 @@ What's not done yet and who needs what from me.
 
 **Done when:** the tuned RF is in `results.csv`, the parameters are saved, the importance chart is in `plots/`, and the report is complete.
 
-### Role 4 – Model C: LightGBM ([Name])
+### Role 4 – Model C: LightGBM ([Get])
 *Best fit: medium to strong coder.*
 
 **Does**
@@ -220,7 +220,7 @@ What's not done yet and who needs what from me.
 
 **Done when:** tuned LightGBM is in `results.csv`, its parameters are saved, and the report (including the comparison) is complete.
 
-### Role 5 – Analysis & presentation ([Name])
+### Role 5 – Analysis & presentation ([Bard])
 *Best fit: a good communicator, or a lighter coder paired with Role 1.*
 
 **Does**
@@ -247,7 +247,7 @@ What's not done yet and who needs what from me.
 
 ## Status
 
-- [ ] `reports/` created with the template for all 5 roles (Role 5)
+- [x] `reports/` created with the template for all 5 roles (Role 5)
 - [ ] Repo, `requirements.txt`, `src/config.py` (Role 1)
 - [ ] `src/evaluation.py` (Role 1)
 - [ ] `01_explore.py` + `results/eda_findings.txt` (Role 2)
