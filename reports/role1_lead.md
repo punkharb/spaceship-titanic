@@ -1,4 +1,4 @@
-# Role 1 – Lead / integrator (punkharb)
+# Role 1 – Lead / integrator (Pun)
 Last updated: 2026-10-28 · Status: In progress
 
 ## 1. Slide summary

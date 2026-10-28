@@ -252,9 +252,6 @@ What's not done yet and who needs what from me.
 ## Status
 
 - [x] `reports/` created with the template for all 5 roles (Role 5)
-- [ ] Repo, `requirements.txt`, `src/config.py` (Role 1)
-- [ ] `src/evaluation.py` (Role 1)
-- [ ] `reports/` created with the template for all 5 roles (Role 5)
 - [x] Repo, `requirements.txt`, `src/config.py` (Role 1)
 - [x] `src/evaluation.py` (Role 1)
 - [ ] `01_explore.py` + `results/eda_findings.txt` (Role 2)
