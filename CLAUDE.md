@@ -15,7 +15,7 @@ whether a passenger was **`Transported`** (True/False).
 | 20% | ML model performance | A strong, honestly validated model. Don't over-tune. |
 | 20% | Presentation | A clear story with charts |
 | 5% | Q&A | **Everyone** can explain the **whole** pipeline, not just their own part |
-| 5% | Teamwork | Visible task board, meeting notes, reviewed merges |
+| 5% | Teamwork | Up-to-date Status checklist (below), reviewed and merged PRs on GitHub |
 
 Pipeline quality is worth more than accuracy. When in doubt, choose the cleaner, better-justified option.
 
@@ -52,7 +52,7 @@ DS Model Training/
 │   ├── role4_lightgbm.md
 │   └── role5_presentation.md
 ├── slides/                   # Role 5
-└── notes/                    # Role 5 – meetings.md, qa_prep.md, task board
+└── notes/                    # Role 5 – qa_prep.md
 ```
 
 `requirements.txt`: `pandas`, `numpy`, `scikit-learn`, `matplotlib`, `lightgbm`. Pin the versions the team actually uses.
@@ -234,7 +234,7 @@ What's not done yet and who needs what from me.
 - **Builds `notes/qa_prep.md`** by collecting section 8 (Likely Q&A questions) from every report.
 - **`06_compare.py` (with Role 1):** reads `results.csv` and produces the comparison table and chart (mean ± std across folds).
 - **`notes/qa_prep.md`:** likely questions with answers, e.g. "Why GroupKFold?", "Why accuracy?", "Why drop Name?", "How did you prevent leakage?", "Why this model?". Makes sure every member rehearses them.
-- **Teamwork evidence:** keeps the task board and `notes/meetings.md` (date, attendees, decisions, next actions).
+- **Teamwork evidence:** no regular meetings are planned, so the evidence is the **Status** checklist below plus reviewed, merged PRs. Role 5 checks that every finished deliverable is ticked and went through a reviewed PR.
 - **Rehearsals:** runs timed rehearsals with the whole team.
 
 **Done when:** the slides are final, every slide's content is traceable to a report, Q&A prep is shared, and at least one full timed rehearsal is done.
@@ -243,7 +243,7 @@ What's not done yet and who needs what from me.
 
 ## Order of work
 
-1. **Setup (Role 1):** repo, `config.py`, `evaluation.py`. In parallel, Role 2 starts the EDA, and Role 5 starts the slide skeleton, task board and the five report files from the template.
+1. **Setup (Role 1):** repo, `config.py`, `evaluation.py`. In parallel, Role 2 starts the EDA, and Role 5 starts the slide skeleton and the five report files from the template.
 2. **Data (Role 2):** finish the EDA → `features.py` → baselines. *Roles 3 and 4 can draft their scripts but must use the merged `features.py` for final results.*
 3. **Models (Roles 3 and 4, in parallel):** tuning on the shared folds.
 4. **Integration (Roles 1 and 5):** comparison, choosing the final model, `submission.csv`, slides.
@@ -252,9 +252,6 @@ What's not done yet and who needs what from me.
 ## Status
 
 - [x] `reports/` created with the template for all 5 roles (Role 5)
-- [ ] Repo, `requirements.txt`, `src/config.py` (Role 1)
-- [ ] `src/evaluation.py` (Role 1)
-- [ ] `reports/` created with the template for all 5 roles (Role 5)
 - [x] Repo, `requirements.txt`, `src/config.py` (Role 1)
 - [x] `src/evaluation.py` (Role 1)
 - [ ] `01_explore.py` + `results/eda_findings.txt` (Role 2)
@@ -264,7 +261,7 @@ What's not done yet and who needs what from me.
 - [ ] `05_lightgbm.py` (Role 4)
 - [ ] `06_compare.py` + comparison chart (Roles 5 and 1)
 - [ ] `07_final_model.py` + `submission.csv` (Role 1)
-- [ ] Slides, `qa_prep.md`, meeting notes (Role 5)
+- [ ] Slides, `qa_prep.md` (Role 5)
 - [ ] All 5 reports marked Done (each role)
 - [ ] Full clean run + rehearsal (all)
 
