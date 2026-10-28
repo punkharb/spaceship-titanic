@@ -1,0 +1,3 @@
+# Raw data is never edited: keep CSVs byte-identical to the Kaggle download
+# (no LF -> CRLF conversion on Windows checkouts).
+*.csv -text

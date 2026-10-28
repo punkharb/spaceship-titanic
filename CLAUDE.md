@@ -98,6 +98,10 @@ evaluate(pipeline, X, y, groups, name, owner, params=None) -> dict
 
 `results/results.csv` columns: `model, owner, accuracy_mean, accuracy_std, precision_mean, recall_mean, f1_mean, roc_auc_mean, fit_time_s, params, date`.
 
+**For `07_final_model.py` to find the tuned models:**
+- Log the tuned model with `evaluate(..., name="random_forest", params=best_params)` / `name="lightgbm"`, and save the same dict to `results/best_params_<name>.json`. Use a different name for untuned runs (e.g. `"random_forest_default"`).
+- Every model script builds `X = add_features(df).drop(columns=[TARGET])`; `build_preprocessor()` selects its own columns. 07 does the same, so the final fit matches CV.
+
 ---
 
 ## Role reports (`reports/`) – what each role has done
