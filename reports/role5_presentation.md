@@ -12,6 +12,7 @@ Numbered steps in the order done, each with the script/function that does it.
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
 |---|---|---|
+| No separate task board or meeting notes file | No regular meetings are planned, and a Markdown board would duplicate the `CLAUDE.md` Status checklist, each report's section 9 and the GitHub PRs | Teamwork evidence = `CLAUDE.md` Status checklist + reviewed, merged PRs (#1–#4 so far) |
 
 ## 4. Results
 Numbers copied from the script output or results/results.csv (mean ± std where available).
@@ -39,7 +40,7 @@ What's not done yet and who needs what from me.
 - [ ] Keep this report up to date: slide plan with source reports, missing content, rehearsal notes (timing, who presents what)
 - [ ] `notes/qa_prep.md`: collect section 8 from every report + likely questions ("Why GroupKFold?", "Why accuracy?", "Why drop Name?", "How did you prevent leakage?", "Why this model?"); make sure every member rehearses them
 - [ ] `06_compare.py` (with Role 1): comparison table and chart from `results.csv` (mean ± std across folds)
-- [ ] Teamwork evidence: task board and `notes/meetings.md` (date, attendees, decisions, next actions)
+- [x] Teamwork evidence: decided to use the `CLAUDE.md` Status checklist + GitHub PRs instead of a task board and `notes/meetings.md` (see section 3). `CLAUDE.md` updated to match (Pun to review the PR).
 - [ ] At least one full timed rehearsal with the whole team
 
 ## Slide plan
