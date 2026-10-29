@@ -15,10 +15,12 @@ import numpy as np
 import pandas as pd
 
 from src.config import ID_COL, PLOT_DIR, RESULTS_DIR, SEED, TARGET, TEST_PATH, TRAIN_PATH
+# Shared with features.py so the EDA evidence and the features can't drift apart.
+from src.features import CHILD_AGE, SPEND_COLUMNS
 
 # Team colours (CLAUDE.md rule 8), used the same way in every chart.
 BLUE, ORANGE, GREY = "#2a78d6", "#eb6834", "#8a8984"  # transported / not / neutral
-SPEND_COLS = ["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
+DARK = "#3d3d3a"  # second neutral, for comparisons that aren't about the target
 CATEGORY_COLS = ["HomePlanet", "CryoSleep", "Destination", "VIP"]
 MIN_GROUP = 30  # categories smaller than this are too noisy to rank
 
@@ -98,7 +100,7 @@ def missing_values(train, test):
     fig, ax = plt.subplots(figsize=(8, 4))
     x = np.arange(len(cols))
     ax.bar(x - 0.2, miss["train_%"], 0.4, color=GREY, label="train")
-    ax.bar(x + 0.2, miss["test_%"], 0.4, color=BLUE, label="test")
+    ax.bar(x + 0.2, miss["test_%"], 0.4, color=DARK, label="test")
     ax.set_xticks(x, cols, rotation=45, ha="right")
     ax.set_ylabel("% missing")
     ax.set_ylim(0, miss[["train_%", "test_%"]].max().max() * 1.3)  # room for the legend
@@ -121,32 +123,43 @@ def data_quality(train, test):
     both = pd.concat([train.drop(columns=TARGET), test])
     dup_rows = train.drop(columns=ID_COL).duplicated().sum()
     dup_ids = both[ID_COL].duplicated().sum()
-    neg = (both[SPEND_COLS] < 0).sum().sum()
+    neg = (both[SPEND_COLUMNS] < 0).sum().sum()
     print(f"duplicate rows (ignoring ID) in train: {dup_rows}; duplicate IDs across files: {dup_ids}")
     print(f"negative spending values: {neg}")
     print(f"age range: {both['Age'].min():.0f}-{both['Age'].max():.0f}, "
           f"age 0: {(both['Age'] == 0).sum()} passengers")
 
-    spend = both[SPEND_COLS].sum(axis=1, min_count=1)
+    # The rules are found on train alone; test only confirms they hold there too.
+    def rule_counts(df):
+        spend = df[SPEND_COLUMNS].sum(axis=1, min_count=1)
+        asleep, kids = df["CryoSleep"] == True, df["Age"] < CHILD_AGE  # noqa: E712 (NaN too)
+        return {"asleep": asleep.sum(), "asleep_spent": (asleep & (spend > 0)).sum(),
+                "kids": kids.sum(), "kids_spent": (kids & (spend > 0)).sum(),
+                "youngest_spender": df.loc[spend > 0, "Age"].min()}
+    tr, te = rule_counts(train), rule_counts(test)
+    print(f"train: CryoSleep=True {tr['asleep']:,}, of whom spent: {tr['asleep_spent']}; "
+          f"under {CHILD_AGE}: {tr['kids']:,}, of whom spent: {tr['kids_spent']}; "
+          f"youngest spender aged {tr['youngest_spender']:.0f}")
+    print(f"test (confirmation): CryoSleep=True {te['asleep']:,}, spent: {te['asleep_spent']}; "
+          f"under {CHILD_AGE}: {te['kids']:,}, spent: {te['kids_spent']}")
+
+    spend = both[SPEND_COLUMNS].sum(axis=1, min_count=1)
     cryo = both["CryoSleep"]
     cryo_spend = ((cryo == True) & (spend > 0)).sum()
     cryo_n = (cryo == True).sum()
     awake_zero = (spend.loc[cryo == False] == 0).mean()
-    kids = both["Age"] < 13
-    kid_spend = (both.loc[kids, SPEND_COLS] > 0).any(axis=1).sum()
-    # Rows whose gaps the logical rules below could fill.
+    kids = both["Age"] < CHILD_AGE
+    # Rows whose gaps the logical rules could fill.
     cryo_fill = (cryo.isna() & (spend > 0)).sum()
-    spend_fill = ((cryo == True) | kids).loc[both[SPEND_COLS].isna().any(axis=1)].sum()
-    print(f"CryoSleep=True passengers: {cryo_n:,}, of whom spent anything: {cryo_spend}")
+    spend_fill = ((cryo == True) | kids).loc[both[SPEND_COLUMNS].isna().any(axis=1)].sum()
     print(f"awake passengers who spent nothing: {awake_zero:.1%}")
-    print(f"children under 13: {kids.sum():,}, of whom spent anything: {kid_spend}")
     print(f"missing CryoSleep with spending > 0: {cryo_fill}; "
-          f"rows with a missing spend column that are asleep or under 13: {spend_fill}")
+          f"rows with a missing spend column that are asleep or under {CHILD_AGE}: {spend_fill}")
 
     fig, ax = plt.subplots(figsize=(6, 3.5))
     groups = {"CryoSleep": both.loc[cryo == True], "Awake": both.loc[cryo == False]}
     shares = [(spend.loc[g.index] > 0).mean() * 100 for g in groups.values()]
-    ax.bar(list(groups), shares, color=[GREY, BLUE])
+    ax.bar(list(groups), shares, color=[GREY, DARK])
     ax.set_ylabel("% who spent anything")
     ax.set_title(f"Nobody in CryoSleep spends money ({cryo_spend} of {cryo_n:,})")
     save(fig, "03_cryosleep_spending.png")
@@ -154,9 +167,11 @@ def data_quality(train, test):
     conclude(f"No duplicate rows ({dup_rows}) or duplicate IDs ({dup_ids}), and no negative "
              f"spending ({neg}). Ages run {both['Age'].min():.0f}-{both['Age'].max():.0f}; the "
              f"{(both['Age'] == 0).sum()} age-0 passengers are plausible babies, so we keep them.")
-    conclude(f"CryoSleep passengers never spend ({cryo_spend} of {cryo_n:,}) and children "
-             f"under 13 never spend ({kid_spend} of {kids.sum():,}). These are reliable "
-             f"row-wise rules: missing spending for them is 0, and anyone who spent > 0 was not "
+    conclude(f"In train, CryoSleep passengers never spend ({tr['asleep_spent']} of "
+             f"{tr['asleep']:,}) and children under {CHILD_AGE} never spend ({tr['kids_spent']} of "
+             f"{tr['kids']:,}; the youngest spender is {tr['youngest_spender']:.0f}). Test confirms "
+             f"both ({te['asleep_spent']} of {te['asleep']:,}; {te['kids_spent']} of {te['kids']:,}). "
+             f"These are reliable row-wise rules: missing spending for them is 0, and anyone who spent > 0 was not "
              f"in CryoSleep. Across both files this fills {cryo_fill} missing CryoSleep values "
              f"and the gaps in {spend_fill} rows with missing spending. "
              f"The reverse does not hold: {awake_zero:.0%} of awake passengers also spent nothing.")
@@ -173,19 +188,19 @@ def train_vs_test(train, test):
     print(cat_diff.round(2).to_string())
 
     # Standardised mean difference: < 0.1 is the usual "negligible" threshold.
-    num = ["Age", "CabinNum"] + SPEND_COLS
+    num = ["Age", "CabinNum"] + SPEND_COLUMNS
     smd = ((train[num].mean() - test[num].mean()) / train[num].std()).abs()
     print(smd.round(3).rename("SMD").to_string())
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
     bins = np.arange(0, 81, 5)
     axes[0].hist(train["Age"].dropna(), bins, density=True, alpha=0.6, color=GREY, label="train")
-    axes[0].hist(test["Age"].dropna(), bins, density=True, alpha=0.6, color=BLUE, label="test")
+    axes[0].hist(test["Age"].dropna(), bins, density=True, alpha=0.6, color=DARK, label="test")
     axes[0].set_xlabel("Age")
     axes[0].legend()
     shares = pd.DataFrame({"train": train["HomePlanet"].value_counts(normalize=True),
                            "test": test["HomePlanet"].value_counts(normalize=True)}) * 100
-    shares.plot.bar(ax=axes[1], color=[GREY, BLUE], rot=0)
+    shares.plot.bar(ax=axes[1], color=[GREY, DARK], rot=0)
     axes[1].set_ylabel("% of passengers")
     fig.suptitle("Train and test look alike (age, home planet), so the model should generalise")
     save(fig, "04_train_vs_test.png")
@@ -222,25 +237,25 @@ def feature_vs_target(train):
         ax.tick_params(axis="x", rotation=30)
     for ax in axes[:, 0]:
         ax.set_ylabel("% transported")
-    fig.suptitle("CryoSleep, home planet and deck change the transported rate the most "
+    fig.suptitle("CryoSleep, deck and home planet change the transported rate the most "
                  "(dashed = overall)")
     save(fig, "05_rate_by_category.png")
 
     # Spending: compare spenders and non-spenders per spend column.
     spend_rate = pd.DataFrame({
-        "spent_nothing": [train.loc[train[c] == 0, TARGET].mean() for c in SPEND_COLS],
-        "spent_something": [train.loc[train[c] > 0, TARGET].mean() for c in SPEND_COLS],
-    }, index=SPEND_COLS) * 100
-    total = train[SPEND_COLS].sum(axis=1, min_count=1)
-    skew = train[SPEND_COLS].skew()
+        "spent_nothing": [train.loc[train[c] == 0, TARGET].mean() for c in SPEND_COLUMNS],
+        "spent_something": [train.loc[train[c] > 0, TARGET].mean() for c in SPEND_COLUMNS],
+    }, index=SPEND_COLUMNS) * 100
+    total = train[SPEND_COLUMNS].sum(axis=1, min_count=1)
+    skew = train[SPEND_COLUMNS].skew()
     print(f"\n% transported by spending:\n{spend_rate.round(1).to_string()}")
     print(f"skewness of spending columns:\n{skew.round(1).to_string()}")
 
     fig, ax = plt.subplots(figsize=(8, 3.8))
-    x = np.arange(len(SPEND_COLS))
+    x = np.arange(len(SPEND_COLUMNS))
     ax.bar(x - 0.2, spend_rate["spent_nothing"], 0.4, color=GREY, label="spent nothing")
-    ax.bar(x + 0.2, spend_rate["spent_something"], 0.4, color=ORANGE, label="spent something")
-    ax.set_xticks(x, SPEND_COLS)
+    ax.bar(x + 0.2, spend_rate["spent_something"], 0.4, color=DARK, label="spent something")
+    ax.set_xticks(x, SPEND_COLUMNS)
     ax.set_ylabel("% transported")
     ax.legend()
     ax.set_title("Passengers who spend are transported far less often")
@@ -340,7 +355,7 @@ def summary():
         "Split Cabin into Deck, CabinNum, Side; then drop Cabin, Name and PassengerId (ID-like).",
         "Add GroupSize (count of the travel group within the same file) and TotalSpend.",
         "log1p-transform the five spending columns and TotalSpend (heavy right skew).",
-        "Rule-based filling: CryoSleep=True or Age<13 -> missing spending = 0; "
+        f"Rule-based filling: CryoSleep=True or Age<{CHILD_AGE} -> missing spending = 0; "
         "any spending > 0 -> CryoSleep = False. These are logical rules, not learned statistics.",
         "Remaining gaps (~2% per column) are imputed inside the Pipeline (median / most frequent), "
         "so imputation is learned from training folds only.",
