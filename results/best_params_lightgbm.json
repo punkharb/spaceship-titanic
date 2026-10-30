@@ -1,0 +1,10 @@
+{
+  "model__subsample_freq": 1,
+  "model__subsample": 1.0,
+  "model__num_leaves": 15,
+  "model__n_estimators": 500,
+  "model__min_child_samples": 20,
+  "model__max_depth": 4,
+  "model__learning_rate": 0.03,
+  "model__colsample_bytree": 0.8
+}

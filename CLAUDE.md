@@ -258,7 +258,7 @@ What's not done yet and who needs what from me.
 - [x] `src/features.py` + `02_prepare.py` (Role 2)
 - [x] `03_baseline.py` (Role 2)
 - [ ] `04_random_forest.py` (Role 3)
-- [ ] `05_lightgbm.py` (Role 4)
+- [x] `05_lightgbm.py` (Role 4)
 - [ ] `06_compare.py` + comparison chart (Roles 5 and 1)
 - [ ] `07_final_model.py` + `submission.csv` (Role 1)
 - [ ] Slides, `qa_prep.md` (Role 5)
