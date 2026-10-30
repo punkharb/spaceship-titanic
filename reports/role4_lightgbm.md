@@ -1,12 +1,13 @@
 # Role 4 – Model C: LightGBM (Get)
-Last updated: 2026-10-30 · Status: In progress (Random Forest comparison waits on Role 3)
+Last updated: 2026-10-30 · Status: Done
 
 ## 1. Slide summary
 - Tuned LightGBM reaches **81.42% ± 1.12** cross-validated accuracy (ROC-AUC 0.9025), **+4.01 points** above Logistic Regression (77.41%).
 - Tuning added only **+0.36 points** over the default settings (81.06%), well within the ~1.2-point fold-to-fold noise: LightGBM's defaults were already good.
 - Tuning **halved overfitting**: the train–validation gap fell from 8.6 to 4.0 points (simpler trees: 15 leaves, depth 4, small learning rate).
 - The model relies most on **spending** (Spa, VRDeck, FoodCourt) and **CryoSleep**; GroupSize and VIP add almost nothing.
-- The whole search (30 settings × 5 folds) took **25 seconds**.
+- vs tuned Random Forest (80.60%): LightGBM is **+0.82 points** ahead, but that is **within the fold-to-fold spread (~1.31 points)**, so the two are effectively tied. LightGBM has higher F1 and ROC-AUC and fits more than 10× faster per fold (0.17 s vs 2.05 s).
+- The whole search (30 settings × 5 folds) took **25–27 seconds**.
 
 ## 2. What I did
 1. Scored LightGBM with default settings using the shared `evaluate()` → row `lightgbm_default` (`05_lightgbm.py`, step 1).
@@ -14,13 +15,13 @@ Last updated: 2026-10-30 · Status: In progress (Random Forest comparison waits 
 3. Saved the best settings to `results/best_params_lightgbm.json` and scored them with `evaluate()` → row `lightgbm` (the name `07_final_model.py` looks for).
 4. Overfitting check: mean training-fold vs validation-fold accuracy, default vs tuned (`overfit_report()`).
 5. Permutation importance on the validation folds only, averaged over the 5 folds (`permutation_importance_cv()`) → `plots/11_lightgbm_permutation_importance.png`.
-6. Compared with the baselines in `results.csv` (`compare_with_others()`); Random Forest is added automatically once Role 3 logs it.
+6. Compared with the baselines and Role 3's Random Forest in `results.csv` (`compare_with_others()`), re-run on up-to-date main after Role 3's merge.
 7. Checked: the script gives identical results on a second run; the saved params pass `07_final_model.py`'s `load_params()` check; leakage review found no leakage.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
 |---|---|---|
-| `RandomizedSearchCV`, 30 settings, not a full grid | The full grid has 4·4·3·4·4·3·3 = 6,912 settings; 30 random ones find a good region fast. Efficiency is graded. | Search took 25 s; the top 5 settings all score 0.8123–0.8142, so more search would not help |
+| `RandomizedSearchCV`, 30 settings, not a full grid | The full grid has 4·4·3·4·4·3·3 = 6,912 settings; 30 random ones find a good region fast. Efficiency is graded. | Search took 25–27 s (wall-clock, varies per run); the top 5 settings all score 0.8123–0.8142, so more search would not help |
 | Small value lists: learning_rate {0.01, 0.03, 0.05, 0.1}, n_estimators {100, 200, 300, 500}, num_leaves {7, 15, 31}, max_depth {-1, 4, 6, 8}, min_child_samples {10, 20, 40, 80}, subsample {0.7, 0.85, 1.0}, colsample_bytree {0.6, 0.8, 1.0} | Common sensible ranges around LightGBM's defaults; mostly towards *simpler* trees, because the default overfits (8.6-point gap) | Script output, step 4 |
 | `subsample_freq = 1` kept in the search space | LightGBM ignores `subsample` unless `subsample_freq > 0`. Saving it with the params makes 07 train exactly the model we validated. | Leakage review: 07's model gives identical predictions to the CV model |
 | Plain Python lists instead of scipy distributions | The chosen values must survive JSON unchanged, because 07 checks the json file against the params in `results.csv` | `load_params("lightgbm")` passes |
@@ -35,8 +36,10 @@ Last updated: 2026-10-30 · Status: In progress (Random Forest comparison waits 
 |---|---|---|---|---|---|---|
 | Dummy (most frequent) | 0.4963 ± 0.0141 | 0.3999 | 0.8000 | 0.5332 | 0.5000 | 0.0025 s |
 | Logistic Regression | 0.7741 ± 0.0071 | 0.7668 | 0.7922 | 0.7792 | 0.8525 | 0.0448 s |
-| LightGBM default | 0.8106 ± 0.0121 | 0.8080 | 0.8188 | 0.8132 | 0.9030 | 0.0994 s |
-| **LightGBM tuned** | **0.8142 ± 0.0112** | 0.8088 | 0.8267 | 0.8176 | 0.9025 | 0.1794 s |
+| Random Forest default (Role 3) | 0.8005 ± 0.0128 | 0.8270 | 0.7638 | 0.7940 | 0.8852 | 1.2509 s |
+| Random Forest tuned (Role 3) | 0.8060 ± 0.0131 | 0.8129 | 0.7991 | 0.8057 | 0.8950 | 2.0473 s |
+| LightGBM default | 0.8106 ± 0.0121 | 0.8080 | 0.8188 | 0.8132 | 0.9030 | 0.1002 s |
+| **LightGBM tuned** | **0.8142 ± 0.0112** | 0.8088 | 0.8267 | 0.8176 | 0.9025 | 0.1735 s |
 
 (Fit time is wall-clock and varies slightly between runs; all scores are identical between runs.)
 
@@ -64,7 +67,31 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 
 **Comparison**
 - vs Logistic Regression: **+4.01 points** accuracy, larger than the fold-to-fold spread (std ≈ 1.12 points); ROC-AUC 0.9025 vs 0.8525. A likely reason: trees can capture interactions between features (e.g. spending only varies for awake passengers) and non-linear effects that a linear model can't.
-- vs Random Forest: *pending — Role 3 has not logged `random_forest` yet.*
+- vs Random Forest (both tuned; RF numbers from `results.csv` and `reports/role3_random_forest.md`):
+
+| | LightGBM tuned | Random Forest tuned |
+|---|---|---|
+| Accuracy | **0.8142 ± 0.0112** | 0.8060 ± 0.0131 |
+| Precision | 0.8088 | **0.8129** |
+| Recall | **0.8267** | 0.7991 |
+| F1 | **0.8176** | 0.8057 |
+| ROC-AUC | **0.9025** | 0.8950 |
+| Fit time / fold | **0.1735 s** | 2.0473 s |
+| Train vs validation gap | **4.0 points** (0.8545 vs 0.8142) | 9.2 points (0.8978 vs 0.8060) |
+| Best parameters | 15 leaves, depth 4, 500 trees, learning rate 0.03 | 200 trees, depth 20, min_samples_leaf 4, max_features sqrt |
+| Top 4 features | Spa_log 4.38, VRDeck_log 3.85, FoodCourt_log 3.76, CryoSleep 2.37 | FoodCourt_log 3.92, Spa_log 2.39, VRDeck_log 2.23, CryoSleep 1.62 |
+
+  Script output (step 6): "LightGBM vs random_forest: +0.82 points (within the fold-to-fold spread, std ≈ 1.31 points)".
+
+**Why LightGBM vs Random Forest**
+- **They are statistically very close.** LightGBM is +0.82 points ahead in accuracy, but the fold-to-fold spread is about 1.31 points, so we cannot claim LightGBM is clearly better. A different split of passengers could plausibly narrow or reverse the gap.
+- **The comparison is fair.** Both were tuned the same way (`RandomizedSearchCV`, 30 settings) on the same `get_cv()` GroupKFold folds, with the same `build_preprocessor()` and scored with the same `evaluate()`. Both best scores share the same small optimistic bias (best of 30 on the folds that chose it), so it cancels out in the comparison.
+- **Likely reasons LightGBM is slightly ahead** (plausible explanations, not proven):
+  - Boosting builds each tree to correct the errors of the previous ones, while a Random Forest averages independent trees that each try to solve the whole problem. Boosting can keep reducing the remaining errors; averaging mainly reduces noise.
+  - The tuned LightGBM uses many shallow trees (depth 4, 15 leaves) with a small learning rate (0.03), so each tree adds a small correction. This likely explains why it overfits less (4.0 vs 9.2 point gap) while still scoring at least as well.
+  - LightGBM is faster because it bins numeric values into histograms and grows small trees, while the forest grows 200 deep trees (depth up to 20) on bootstrap samples.
+- **Both models agree on what matters:** spending (Spa, VRDeck, FoodCourt) and CryoSleep are the top 4 features in both, which makes the finding robust to the model choice.
+- **Practical tie-breaker:** with accuracy within noise, LightGBM also has higher F1 (0.8176 vs 0.8057) and ROC-AUC (0.9025 vs 0.8950), a smaller overfitting gap, and fits more than 10× faster per fold (0.1735 s vs 2.0473 s). The forest has slightly higher precision (0.8129 vs 0.8088), LightGBM higher recall (0.8267 vs 0.7991). The final choice is Role 1's (`07_final_model.py`).
 
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
@@ -90,9 +117,11 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 | Question | Short answer |
 |---|---|
 | What's the difference between LightGBM and Random Forest? | RF builds many deep trees independently and averages them; LightGBM builds small trees one after another, each correcting the previous trees' errors (boosting). |
-| Why RandomizedSearchCV instead of GridSearchCV? | The full grid is 6,912 settings; 30 random ones took 25 s and the top 5 all score 0.812–0.814, so a bigger search wouldn't help. |
+| Why RandomizedSearchCV instead of GridSearchCV? | The full grid is 6,912 settings; 30 random ones took 25–27 s and the top 5 all score 0.812–0.814, so a bigger search wouldn't help. |
 | Did tuning help? | Only +0.36 points accuracy, within noise. Its real benefit: the overfitting gap halved (8.6 → 4.0 points). |
 | Is 81.42% an honest score? | Slightly optimistic: it's the best of 30 settings on the same folds. Expect ~81% on new data. RF has the same bias, so the comparison is fair. |
+| Is LightGBM really better than Random Forest? | Not clearly. It is +0.82 points ahead (81.42% vs 80.60%), but the fold-to-fold spread is ~1.31 points, so the difference is within noise. Both were tuned the same way on the same folds, so the comparison is fair. |
+| Why choose LightGBM if the difference is within noise? | The final choice is Role 1's in `07_final_model.py`. When accuracy ties, a defensible tie-breaker is the rest: LightGBM has higher F1 (0.8176 vs 0.8057) and ROC-AUC (0.9025 vs 0.8950), a smaller overfitting gap (4.0 vs 9.2 points), and fits more than 10× faster (0.17 s vs 2.05 s per fold). |
 | Why `subsample_freq = 1`? | LightGBM ignores `subsample` unless bagging is switched on; saving it means the final model is exactly the validated one. |
 | How do you know it's not overfitting? | Train 85.45% vs validation 81.42% (4.0-point gap), down from 8.6 points with default settings. |
 | Why permutation importance and not LightGBM's built-in importance? | Built-in importance counts splits on training data; permutation measures accuracy lost on unseen validation passengers. |
@@ -102,7 +131,9 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 - [x] `05_lightgbm.py`: default + tuned LightGBM, overfitting check, importance chart
 - [x] `results/best_params_lightgbm.json` saved; `lightgbm_default` and `lightgbm` rows in `results.csv`
 - [x] Leakage review passed (no leakage)
-- [ ] **Compare with Random Forest** once Role 3 logs `random_forest`: re-run `python 05_lightgbm.py` (step 6 prints it), then write why LightGBM beats or loses to RF here → then mark this report *Done*.
-- For Role 1: the Thai console needs `PYTHONUTF8=1` to print "±"; `evaluate()` rewriting the CSV trims the last float digits of other rows (cosmetic diff only).
-- For Role 3: plot number 10 is left free for the RF importance chart.
-- For `results.csv` merge conflicts with Role 3's PR: re-run both scripts; `evaluate()` replaces only its own rows.
+- [x] Compared with Random Forest (re-run on up-to-date main after Role 3's merge; section 4)
+- [x] Report complete
+- For Role 1 (07): `lightgbm` row and `best_params_lightgbm.json` are in place. LightGBM vs RF is within noise (+0.82 vs ~1.31 points spread); see section 4 for the tie-breakers.
+- For Role 1: the Thai console needs `PYTHONUTF8=1` to print "±" and "≈"; `evaluate()` rewriting the CSV trims the last float digits of other rows (cosmetic diff only).
+- Role 3 flagged that `05_lightgbm.py` prints "≈", which crashes on Windows consoles that can't encode it when output is redirected. With `PYTHONUTF8=1` the run completed (run log contains the line). Not changed in code yet.
+- For `results.csv` merge conflicts: re-run the scripts; `evaluate()` replaces only its own rows.
