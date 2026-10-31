@@ -263,7 +263,7 @@ What's not done yet and who needs what from me.
 - [x] `07_final_model.py` + `submission.csv` (Role 1)
 - [ ] Slides, `qa_prep.md` (Role 5)
 - [ ] All 5 reports marked Done (each role)
-- [ ] Full clean run + rehearsal (all)
+- [ ] Full clean run + rehearsal (all) – clean run done 2026-10-31 (Role 1); rehearsal still to do
 
 ---
 

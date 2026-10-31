@@ -4,7 +4,7 @@ Last updated: 2026-10-31 · Status: Done
 ## 1. Slide summary
 - **Final model: LightGBM**, CV accuracy **0.8142 ± 0.0112** (ROC-AUC 0.9025), retrained on all 8,693 rows → `submission.csv` (4,277 rows).
 - LightGBM vs Random Forest (0.8060 ± 0.0131) is within one std, but LightGBM is ~12× faster to fit (0.17 s vs 2.05 s per fold) → best on both counts.
-- The whole pipeline 01→07 re-runs from a clean checkout in ~160 s with **identical** scores, parameters, plots and submission.
+- The whole pipeline 01→07 (including 06_compare) re-runs from a clean checkout in ~196 s with **identical** scores, parameters, comparison table, 13 plots and submission.
 - Every model is validated on the **same 5 GroupKFold folds**, grouped by travel group (`gggg` of `PassengerId`).
 - Every model is scored by **one function**, `evaluate()`: accuracy, precision, recall, F1, ROC-AUC (mean ± std) and fit time, logged to `results/results.csv`.
 - Preprocessing is refitted **inside each fold**, so validation rows never influence training.
@@ -21,6 +21,7 @@ Last updated: 2026-10-31 · Status: Done
 8. Post-merge leakage review of Roles 2–4 (`src/features.py`, 01–05) by independent reviewers: no leakage found (details in section 6).
 9. Ran `python 07_final_model.py` → LightGBM chosen, `submission.csv` written and checked against Kaggle's `sample_submission.csv`.
 10. Clean run: fresh checkout, all outputs deleted, 01→07 run in order → all exit 0, results identical to the committed ones.
+11. Final clean run on 2026-10-31 after `06_compare.py` was merged: all 7 scripts exit 0; `results.csv` metrics, both `best_params` files, `model_comparison.csv`, `eda_findings.txt`, all 13 plots and `submission.csv` (byte for byte) identical to `main`.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -52,7 +53,7 @@ Last updated: 2026-10-31 · Status: Done
 - Final model: **lightgbm** with `subsample_freq=1, subsample=1.0, num_leaves=15, n_estimators=500, min_child_samples=20, max_depth=4, learning_rate=0.03, colsample_bytree=0.8, random_state=42`.
 - Submission check: 4,277 rows, columns `PassengerId, Transported`, True/False with no gaps, ids identical and in the same order as `sample_submission.csv`.
 - Predicted transported share on test: **51.5%** (2,201 True / 2,076 False) vs 50.4% in train → no drift towards one class.
-- Clean run times: 01 6 s, 02 3 s, 03 5 s, 04 96 s, 05 47 s, 07 3 s.
+- Final clean run times: 01 6 s, 02 4 s, 03 5 s, 04 118 s, 05 56 s, 06 2 s, 07 5 s (~196 s total).
 
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
@@ -93,4 +94,4 @@ Last updated: 2026-10-31 · Status: Done
 - `06_compare.py` + comparison chart: joint with Role 5 (Bard), not started.
 - Check the technical slides with Role 5; rehearsal with the whole team.
 - Review follow-ups for owners (low severity, no leakage): **Role 4** – `05_lightgbm.py`:167 prints `≈`, which crashes on cp1252/cp874 consoles (use `~` like 04); report line 88 "cancels out" → "similar for both". **Roles 3 & 4** – add `error_score="raise"` to `RandomizedSearchCV`. **Role 2** – be ready to justify `CHILD_AGE = 13` (chosen from EDA, not the target).
-- Re-run 01→07 after any further merge.
+- Re-run 01→07 only if a script changes again; the last clean run matches `main`.
