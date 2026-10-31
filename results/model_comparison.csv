@@ -1,0 +1,7 @@
+model,owner,accuracy,precision_mean,recall_mean,f1_mean,roc_auc_mean,fit_time_s
+lightgbm,Role 4,0.8142 ± 0.0112,0.8088,0.8267,0.8176,0.9025,0.1735
+lightgbm_default,Role 4,0.8106 ± 0.0121,0.808,0.8188,0.8132,0.903,0.1002
+random_forest,Role 3,0.8060 ± 0.0131,0.8129,0.7991,0.8057,0.895,2.0473
+random_forest_default,Role 3,0.8005 ± 0.0128,0.827,0.7638,0.794,0.8852,1.2509
+logistic_regression,Role 2,0.7741 ± 0.0071,0.7668,0.7922,0.7792,0.8525,0.0448
+dummy_most_frequent,Role 2,0.4963 ± 0.0141,0.3999,0.8,0.5332,0.5,0.0025
