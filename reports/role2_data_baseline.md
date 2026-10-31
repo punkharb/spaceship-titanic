@@ -53,7 +53,7 @@ Fit time changes slightly with each run; the values above are the ones in the co
 |---|---|---|
 | `01_target_balance.png` | Classes are balanced: 50.4% transported | Data overview |
 | `02_missing_values.png` | Every column is ~2% missing, the same in train and test | Data cleaning |
-| `03_cryosleep_spending.png` | Nobody in CryoSleep spends money (0 of 4,581) | Data cleaning (rule-based fill) |
+| `03_cryosleep_spending.png` | Nobody in CryoSleep spends money: 0.0% of sleepers vs 90.8% of awake passengers (0 of 4,581) | Data cleaning (rule-based fill) |
 | `04_train_vs_test.png` | Train and test look alike, so the model should generalise | EDA / generalisation |
 | `05_rate_by_category.png` | CryoSleep, deck and home planet change the transported rate the most | EDA findings |
 | `06_spending_vs_target.png` | Passengers who spend are transported far less often | EDA findings |
@@ -76,6 +76,7 @@ Fit time changes slightly with each run; the values above are the ones in the co
 - My first claim that "group members share their outcome" was weak: 44% of groups all agree vs 41% by chance. I reworded it: the case for GroupKFold rests on shared features and on test groups being unseen, not on shared outcomes.
 - The coefficient chart's first title named CryoSleep, which isn't in the top 3. I retitled it from the actual coefficients.
 - Review notes → fixes: the EDA now derives the fill rules from train alone and uses test only as confirmation. It imports `SPEND_COLUMNS`/`CHILD_AGE` from `features.py` so the evidence and the features can't drift apart. Cabin splitting no longer crashes on a batch with no Cabin values. Charts comparing train vs test now use neutral colours, keeping blue/orange for the target.
+- Role 5 found that chart 03 showed about 23% of sleepers spending, contradicting its title. The cause was `pd.concat` of train and test without `ignore_index=True`: both files number their rows from 0, so looking up the sleepers' rows by label also picked up the other file's rows. The fix was `ignore_index=True` in both concats in `01_explore.py`. The chart now shows 0.0% vs 90.8%. Every number in `eda_findings.txt` was already correct and is unchanged. Lesson: open every chart, not just a sample, and check it against the printed numbers.
 - The packages weren't installed on my machine. I created `.venv` and installed `requirements.txt` (Python 3.14).
 
 ## 8. Likely Q&A questions
