@@ -1,5 +1,5 @@
 # Role 2 – Data + baseline model (Champ)
-Last updated: 2026-10-30 · Status: Done (waiting for Role 1 review of `src/features.py`)
+Last updated: 2026-10-31 · Status: Done
 
 ## 1. Slide summary
 - Balanced target: **50.4%** transported (4,378 vs 4,315), so accuracy is a fair main metric.
@@ -37,8 +37,10 @@ From `results/results.csv` (5-fold GroupKFold, `evaluate()`):
 
 | Model | Accuracy | Precision | Recall | F1 | ROC-AUC | Train acc. | Fit time (s) |
 |---|---|---|---|---|---|---|---|
-| dummy_most_frequent | 0.4963 ± 0.0141 | 0.3999 | 0.8000 | 0.5332 | 0.5000 | 0.5037 | 0.0023 |
-| logistic_regression | 0.7741 ± 0.0071 | 0.7668 | 0.7922 | 0.7792 | 0.8525 | 0.7758 | 0.0567 |
+| dummy_most_frequent | 0.4963 ± 0.0141 | 0.3999 | 0.8000 | 0.5332 | 0.5000 | 0.5037 | 0.0025 |
+| logistic_regression | 0.7741 ± 0.0071 | 0.7668 | 0.7922 | 0.7792 | 0.8525 | 0.7758 | 0.0448 |
+
+Fit time changes slightly with each run; the values above are the ones in the committed `results.csv`. All the scores are identical on every run.
 
 - The dummy scores just below 50%. The training majority flips between folds, so it predicted "transported" for everyone in 4 of 5 folds and "not transported" in the fifth.
 - Logistic Regression out-of-fold confusion matrix (rows = true False/True, columns = predicted False/True): `[[3261, 1054], [910, 3468]]`.
@@ -90,9 +92,20 @@ From `results/results.csv` (5-fold GroupKFold, `evaluate()`):
 | Why log-transform spending? | Skewness is 6–13. log1p stops a few huge bills dominating the linear model. Trees are unaffected. |
 | Why Logistic and not Linear Regression? | The target is True/False. Logistic gives a probability between 0 and 1, while Linear predicts any number. |
 | Is GroupSize leakage? | No. It's counted within the same file, and since GroupKFold keeps groups whole it's identical per fold (checked in 02_prepare.py). |
+| How much better are the tree models than your baseline? | Tuned LightGBM is 0.8142 and tuned Random Forest 0.8060, vs 0.7741 for Logistic Regression: +4.0 and +3.2 points, more than the fold-to-fold std. Trees can combine features (interactions) and bend at thresholds, which a linear model can't. |
+| Why is CryoSleep not the biggest coefficient? | Sleepers never spend, so the spending columns already carry most of CryoSleep's information and the model splits the credit. Its transported rate (82% vs 33%) is the clearer measure of its strength. |
 | Does the model generalise to test? | Train and test distributions match: at most 1.7 pp difference in category shares, and SMD < 0.02 for numeric columns. |
 
 ## 9. Open items / handover
-- **Role 1:** please review `src/features.py`. It's a shared file. The contract is unchanged: `add_features(df)`, `build_preprocessor()`, `NUMERIC_FEATURES`, `CATEGORICAL_FEATURES`, `DROP_COLUMNS`, plus an extra `SPEND_COLUMNS` constant.
-- **Roles 3 and 4:** use `X = add_features(df).drop(columns=[TARGET])` and `Pipeline([("prep", build_preprocessor()), ("model", ...)])`. The bar to beat is **0.7741** accuracy.
+- Nothing open for Role 2.
+- `src/features.py` was merged in PR #7 after Role 1 approved it. Roles 3 and 4 reuse it unchanged: `04_random_forest.py` and `05_lightgbm.py` both build `X = add_features(df).drop(columns=[TARGET])` and `Pipeline([("prep", build_preprocessor()), ("model", ...)])`.
+- **How the tuned models compare with my baseline** (from `results/results.csv`, same folds):
+
+| Model | Accuracy | vs Logistic Regression |
+|---|---|---|
+| logistic_regression (baseline) | 0.7741 ± 0.0071 | — |
+| random_forest (tuned, Role 3) | 0.8060 ± 0.0131 | +3.2 points |
+| lightgbm (tuned, Role 4) | 0.8142 ± 0.0112 | +4.0 points |
+
+- Both tuned models beat the baseline by well over one std, so the gain is real and not fold-to-fold noise. The full comparison chart is Role 5/Role 1's `06_compare.py`.
 - **Role 5:** charts `plots/01`–`09` and the Q&A table above are ready for the slides.
