@@ -1,7 +1,10 @@
 # Role 1 – Lead / integrator (Pun)
-Last updated: 2026-10-28 · Status: In progress
+Last updated: 2026-10-31 · Status: Done
 
 ## 1. Slide summary
+- **Final model: LightGBM**, CV accuracy **0.8142 ± 0.0112** (ROC-AUC 0.9025), retrained on all 8,693 rows → `submission.csv` (4,277 rows).
+- LightGBM vs Random Forest (0.8060 ± 0.0131) is within one std, but LightGBM is ~12× faster to fit (0.17 s vs 2.05 s per fold) → best on both counts.
+- The whole pipeline 01→07 re-runs from a clean checkout in ~160 s with **identical** scores, parameters, plots and submission.
 - Every model is validated on the **same 5 GroupKFold folds**, grouped by travel group (`gggg` of `PassengerId`).
 - Every model is scored by **one function**, `evaluate()`: accuracy, precision, recall, F1, ROC-AUC (mean ± std) and fit time, logged to `results/results.csv`.
 - Preprocessing is refitted **inside each fold**, so validation rows never influence training.
@@ -14,7 +17,10 @@ Last updated: 2026-10-28 · Status: In progress
 4. `src/evaluation.py`: `get_groups()`, `get_cv()`, `evaluate()`.
 5. Self-test `python -m src.evaluation`, written before the code (test first), passes.
 6. Added the Kaggle data (`train.csv`, `test.csv`, `sample_submission.csv`) and a `.gitattributes` so git keeps them byte-identical to the download.
-7. `07_final_model.py`: chooses the final model from `results.csv`, refits it on all of train.csv with its saved best parameters, writes and checks `submission.csv`. Self-test `python 07_final_model.py --self-test` passes; the real run waits for `src/features.py` and the tuned models.
+7. `07_final_model.py`: chooses the final model from `results.csv`, refits it on all of train.csv with its saved best parameters, writes and checks `submission.csv`. Self-test `python 07_final_model.py --self-test` passes.
+8. Post-merge leakage review of Roles 2–4 (`src/features.py`, 01–05) by independent reviewers: no leakage found (details in section 6).
+9. Ran `python 07_final_model.py` → LightGBM chosen, `submission.csv` written and checked against Kaggle's `sample_submission.csv`.
+10. Clean run: fresh checkout, all outputs deleted, 01→07 run in order → all exit 0, results identical to the committed ones.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -35,7 +41,18 @@ Last updated: 2026-10-28 · Status: In progress
 ## 4. Results
 - Self-test (synthetic data, 20 groups × 4 people, 75% transported): DummyClassifier accuracy 0.7500 ± 0.0000, ROC-AUC 0.5000 — matches the known answers.
 - Data added: train.csv 8,693 rows × 14 columns, 6,217 travel groups; test.csv 4,277 rows. `Transported` loads as bool, as `evaluate()` requires.
-- No real model results yet.
+
+**Tuned candidates for the final model** (from `results/results.csv`, printed by `07_final_model.py`):
+
+| Model | Accuracy (mean ± std) | ROC-AUC | Fit time per fold |
+|---|---|---|---|
+| lightgbm | 0.8142 ± 0.0112 | 0.9025 | 0.17 s |
+| random_forest | 0.8060 ± 0.0131 | 0.8950 | 2.05 s |
+
+- Final model: **lightgbm** with `subsample_freq=1, subsample=1.0, num_leaves=15, n_estimators=500, min_child_samples=20, max_depth=4, learning_rate=0.03, colsample_bytree=0.8, random_state=42`.
+- Submission check: 4,277 rows, columns `PassengerId, Transported`, True/False with no gaps, ids identical and in the same order as `sample_submission.csv`.
+- Predicted transported share on test: **51.5%** (2,201 True / 2,076 False) vs 50.4% in train → no drift towards one class.
+- Clean run times: 01 6 s, 02 3 s, 03 5 s, 04 96 s, 05 47 s, 07 3 s.
 
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
@@ -46,6 +63,10 @@ Last updated: 2026-10-28 · Status: In progress
 - One fixed split (`get_cv()`) for all models → fair comparison.
 - `evaluate()` takes a whole Pipeline, so imputer/scaler/encoder are fitted on training folds only.
 - Self-test writes to a temp folder, so `results/results.csv` only holds real runs.
+- Final model chosen only from CV scores on train.csv; test.csv is read after the choice and only passed to `predict()`.
+- Post-merge review of Role 2 (`features.py`, 01–03): `add_features()` is row-wise plus within-file group counts (02 checks it gives identical values on every fold); all learned steps sit in `build_preprocessor()`; EDA confirms **0** travel groups in both train (6,217) and test (3,063).
+- Post-merge review of Roles 3–4 (04, 05): tuning only via `RandomizedSearchCV(cv=get_cv(), groups=...)`, same budget (30 settings) and seed for both; scores from `evaluate()` not `best_score_`; permutation importance on held-out folds; test.csv never read.
+- Known, disclosed limitation: tuned scores are scored on the same folds used for tuning, so they are slightly optimistic (both reports say so). Nested CV would remove this at ~5× the cost.
 
 ## 7. Problems and how I fixed them
 - lightgbm and matplotlib not installed on lead's machine → installed with pip and pinned; other pins unchanged, self-test still passes.
@@ -62,10 +83,13 @@ Last updated: 2026-10-28 · Status: In progress
 | Why one `evaluate()` for everyone? | Same folds, same metrics, same logging → numbers are comparable and traceable to `results.csv`. |
 | Why retrain on all of train.csv at the end? | CV already chose the model and parameters; the final fit uses all 8,693 rows for the best possible model, with no further tuning. |
 | How do you know test.csv didn't influence the model? | It is only read after the model is chosen and fitted, and is only passed to `predict()`. |
+| Why LightGBM? | Highest CV accuracy (0.8142) and fastest fit (0.17 s/fold). Its lead over Random Forest is within one std, so speed and simplicity back the choice too. |
+| Is the tuned score optimistic? | Slightly: the best of 30 settings is scored on the same folds it was picked on. Both models had the same budget and folds; nested CV would fix it. |
+| Is the pipeline reproducible? | Yes: a clean checkout re-run of 01→07 gave identical scores, parameters, plots and submission. |
 | Why report mean ± std? | Std across folds shows how stable a score is; a small difference within the std is not a real win. |
 
 ## 9. Open items / handover
-- Review and merge Role 2's `features.py` and the Role 3/4 model scripts.
-- Then run `python 07_final_model.py` to choose the final model and write `submission.csv`, and record the choice and the submission check here.
-- Run 01→07 from a clean state before the deadline.
-- **For Roles 3 and 4:** follow the naming contract in CLAUDE.md (under results.csv columns): tuned model logged as `name="random_forest"` / `"lightgbm"` with `params=best_params`, the same dict saved to `results/best_params_<name>.json` (search keys like `model__n_estimators` are fine), and `X = add_features(df).drop(columns=[TARGET])`.
+- `06_compare.py` + comparison chart: joint with Role 5 (Bard), not started.
+- Check the technical slides with Role 5; rehearsal with the whole team.
+- Review follow-ups for owners (low severity, no leakage): **Role 4** – `05_lightgbm.py`:167 prints `≈`, which crashes on cp1252/cp874 consoles (use `~` like 04); report line 88 "cancels out" → "similar for both". **Roles 3 & 4** – add `error_score="raise"` to `RandomizedSearchCV`. **Role 2** – be ready to justify `CHILD_AGE = 13` (chosen from EDA, not the target).
+- Re-run 01→07 after any further merge.
