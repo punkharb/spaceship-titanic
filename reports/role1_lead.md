@@ -83,7 +83,8 @@ Last updated: 2026-10-31 · Status: Done
 | Why one `evaluate()` for everyone? | Same folds, same metrics, same logging → numbers are comparable and traceable to `results.csv`. |
 | Why retrain on all of train.csv at the end? | CV already chose the model and parameters; the final fit uses all 8,693 rows for the best possible model, with no further tuning. |
 | How do you know test.csv didn't influence the model? | It is only read after the model is chosen and fitted, and is only passed to `predict()`. |
-| Why LightGBM? | Highest CV accuracy (0.8142) and fastest fit (0.17 s/fold). Its lead over Random Forest is within one std, so speed and simplicity back the choice too. |
+| Why LightGBM? | Highest CV accuracy (0.8142) and about 12× faster to fit than Random Forest (0.17 s vs 2.05 s per fold). Its 0.8-point lead over Random Forest is within one std, so speed backs the choice too. |
+| Why tuned LightGBM, not the default? | Tuning added only 0.4 points (0.8142 vs 0.8106), within one std, so the default would be about as good. `07_final_model.py` only ships tuned models (those with saved best params), and the gap is honest to report as "not clearly real". |
 | Is the tuned score optimistic? | Slightly: the best of 30 settings is scored on the same folds it was picked on. Both models had the same budget and folds; nested CV would fix it. |
 | Is the pipeline reproducible? | Yes: a clean checkout re-run of 01→07 gave identical scores, parameters, plots and submission. |
 | Why report mean ± std? | Std across folds shows how stable a score is; a small difference within the std is not a real win. |
