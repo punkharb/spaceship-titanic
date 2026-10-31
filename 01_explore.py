@@ -120,7 +120,9 @@ def missing_values(train, test):
 
 def data_quality(train, test):
     section("4. Data quality")
-    both = pd.concat([train.drop(columns=TARGET), test])
+    # ignore_index: the two files both number their rows 0, 1, 2...; without it, a
+    # lookup by row label would also pick up the other file's rows.
+    both = pd.concat([train.drop(columns=TARGET), test], ignore_index=True)
     dup_rows = train.drop(columns=ID_COL).duplicated().sum()
     dup_ids = both[ID_COL].duplicated().sum()
     neg = (both[SPEND_COLUMNS] < 0).sum().sum()
@@ -159,7 +161,9 @@ def data_quality(train, test):
     fig, ax = plt.subplots(figsize=(6, 3.5))
     groups = {"CryoSleep": both.loc[cryo == True], "Awake": both.loc[cryo == False]}
     shares = [(spend.loc[g.index] > 0).mean() * 100 for g in groups.values()]
-    ax.bar(list(groups), shares, color=[GREY, DARK])
+    bars = ax.bar(list(groups), shares, color=[GREY, DARK])
+    ax.bar_label(bars, fmt="%.1f%%")  # labels make the 0% bar visible
+    ax.set_ylim(0, 105)
     ax.set_ylabel("% who spent anything")
     ax.set_title(f"Nobody in CryoSleep spends money ({cryo_spend} of {cryo_n:,})")
     save(fig, "03_cryosleep_spending.png")
@@ -293,7 +297,9 @@ def feature_vs_target(train):
 
 def id_columns(train, test):
     section("7. ID-like columns and travel groups")
-    both = pd.concat([train.drop(columns=TARGET), test])
+    # ignore_index: the two files both number their rows 0, 1, 2...; without it, a
+    # lookup by row label would also pick up the other file's rows.
+    both = pd.concat([train.drop(columns=TARGET), test], ignore_index=True)
     name_unique = both["Name"].nunique() / both["Name"].notna().sum()
     cabin_unique = both["Cabin"].nunique() / both["Cabin"].notna().sum()
     print(f"Name: {both['Name'].nunique():,} unique of {both['Name'].notna().sum():,} non-missing")
