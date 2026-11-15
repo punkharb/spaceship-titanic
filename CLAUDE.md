@@ -176,7 +176,7 @@ What's not done yet and who needs what from me.
 - Writes `src/evaluation.py`: the fixed `GroupKFold` split, `evaluate()` and logging to `results.csv`.
 - Reviews every merge for leakage (rule 5), reproducibility and shared-rule compliance, then merges.
 - Writes `07_final_model.py`: retrains the chosen model on **all** of train.csv with its best parameters, predicts test.csv, and writes `submission.csv` (`PassengerId, Transported` as True/False).
-- Runs the whole pipeline from 01 to 07 from a clean state before the deadline.
+- Runs the whole pipeline from 01 to 07 from a clean state before the deadline (22 November 2026).
 - Pairs with Role 5 to make sure the technical slides are correct.
 - Keeps **`reports/role1_lead.md`** up to date: project setup, how the validation split and `evaluate()` work and why, the final model choice, the submission, and merge or review notes.
 
@@ -243,6 +243,8 @@ What's not done yet and who needs what from me.
 ---
 
 ## Order of work
+
+**Final deadline: 22 November 2026** (GitHub milestone [Final](https://github.com/punkharb/spaceship-titanic/milestone/1)). By then: next-phase issues #17–#19 merged or closed, slides final, at least one timed rehearsal, and a clean run of the full pipeline on `main`.
 
 1. **Setup (Role 1):** repo, `config.py`, `evaluation.py`. In parallel, Role 2 starts the EDA, and Role 5 starts the slide skeleton and the five report files from the template.
 2. **Data (Role 2):** finish the EDA → `features.py` → baselines. *Roles 3 and 4 can draft their scripts but must use the merged `features.py` for final results.*
