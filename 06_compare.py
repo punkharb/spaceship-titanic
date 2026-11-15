@@ -23,7 +23,9 @@ LABELS = {"dummy_most_frequent": "Dummy (most frequent)",
           "random_forest_default": "Random Forest (default)",
           "random_forest": "Random Forest (tuned)",
           "lightgbm_default": "LightGBM (default)",
-          "lightgbm": "LightGBM (tuned)"}
+          "lightgbm": "LightGBM (tuned)",
+          "random_forest_nested": "Random Forest (nested CV)",
+          "lightgbm_nested": "LightGBM (nested CV)"}
 METRICS = {"precision_mean": "Precision", "recall_mean": "Recall", "f1_mean": "F1"}
 
 
@@ -54,13 +56,23 @@ def _within_std(a, b):
     return a["accuracy_mean"] - b["accuracy_mean"] <= max(a["accuracy_std"], b["accuracy_std"])
 
 
+def _candidates(table):
+    """Models that compete: not the Dummy floor, not nested-CV estimates.
+
+    A nested row (05b_nested_cv.py) re-scores an existing model honestly; it
+    answers "how good is tune-then-predict", not "which model to pick".
+    """
+    m = table["model"]
+    return table[~m.str.startswith("dummy") & ~m.str.endswith("_nested")]
+
+
 def _verdict(table):
     """The winner and its closest rival from a *different* algorithm.
 
     Comparing against its own untuned version would be the wrong question:
     the choice the slides defend is which algorithm, then whether tuning helped.
     """
-    models = table[~table["model"].str.startswith("dummy")]
+    models = _candidates(table)
     best = models.iloc[0]
     rival = models[models["model"].map(_family) != _family(best["model"])].iloc[0]
     return best, rival, best["accuracy_mean"] - rival["accuracy_mean"], _within_std(best, rival)
@@ -87,6 +99,15 @@ def conclusion(table):
                  + ("also within one standard deviation. " if _within_std(best, d)
                     else "more than one standard deviation. "))
 
+    nested = table[table["model"] == f"{best['model']}_nested"]
+    if not nested.empty:
+        n = nested.iloc[0]
+        drop = best["accuracy_mean"] - n["accuracy_mean"]
+        text += (f"Nested CV, which removes the luck of picking the best of many settings, "
+                 f"gives {_label(n['model'])} {n['accuracy_mean']:.4f} ± {n['accuracy_std']:.4f}, "
+                 f"{abs(drop) * 100:.1f} points {'below' if drop > 0 else 'above'} "
+                 "the tuned score: that is the honest estimate for new data. ")
+
     floor = table[table["model"].str.startswith("dummy")]
     others = table[~table["model"].str.startswith("dummy")]
     if not floor.empty and (others["accuracy_mean"] > floor.iloc[0]["accuracy_mean"]).all():
@@ -103,7 +124,7 @@ def plot_accuracy(table, path):
     """Dot + ± std bar per model, Dummy as a dashed floor, winner in dark ink."""
     models = table[~table["model"].str.startswith("dummy")].iloc[::-1]  # best on top
     floor = table[table["model"].str.startswith("dummy")]
-    colors = [INK if m == table.iloc[0]["model"] else NEUTRAL for m in models["model"]]
+    colors = [INK if m == _verdict(table)[0]["model"] else NEUTRAL for m in models["model"]]
     y = range(len(models))
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
@@ -132,8 +153,8 @@ def plot_accuracy(table, path):
 
 def plot_prf(table, path, top=3):
     """Three small panels (precision | recall | F1) for the top models."""
-    models = table[~table["model"].str.startswith("dummy")].head(top).iloc[::-1]
-    colors = [INK if m == table.iloc[0]["model"] else NEUTRAL for m in models["model"]]
+    models = _candidates(table).head(top).iloc[::-1]
+    colors = [INK if m == _verdict(table)[0]["model"] else NEUTRAL for m in models["model"]]
     lo = models[list(METRICS)].min().min() - 0.02
     hi = models[list(METRICS)].max().max() + 0.02
 
@@ -216,6 +237,17 @@ def _self_test():
         model="lgbm_default", accuracy_mean=0.805)], ignore_index=True).pipe(latest_per_model))
     text = conclusion(fam)
     assert "ahead of rf " in text and "over lgbm_default" in text
+
+    # Nested-CV rows are honest estimates, not rival models: they never
+    # become the runner-up, and the conclusion reports the optimism gap.
+    nested = comparison_table(pd.concat([rows, rows.iloc[[2]].assign(
+        model="lgbm_nested", accuracy_mean=0.805)], ignore_index=True).pipe(latest_per_model))
+    text = conclusion(nested)
+    assert "ahead of rf " in text and "lgbm_nested" in text and "0.5 points below" in text
+    # Within fold noise a nested score can also come out higher.
+    higher = comparison_table(pd.concat([rows, rows.iloc[[2]].assign(
+        model="lgbm_nested", accuracy_mean=0.812)], ignore_index=True).pipe(latest_per_model))
+    assert "0.2 points above" in conclusion(higher)
 
     # "Every model beats the Dummy" is only claimed when it is true.
     assert "Every model beats" in conclusion(table)

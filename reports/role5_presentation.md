@@ -1,5 +1,5 @@
 # Role 5 – Analysis & presentation (Bard)
-Last updated: 2026-10-31 · Status: In progress
+Last updated: 2026-11-15 · Status: In progress
 
 ## 1. Slide summary
 - Tuned LightGBM has the highest mean CV accuracy: **0.8142 ± 0.0112** (5 GroupKFold folds).
@@ -35,13 +35,17 @@ Copied from the printed output of `python 06_compare.py` (run 2026-10-31); also 
 | Model | Owner | Accuracy (mean ± std) | Precision | Recall | F1 | ROC-AUC | Fit time (s) |
 |---|---|---|---|---|---|---|---|
 | lightgbm (tuned) | Role 4 | 0.8142 ± 0.0112 | 0.8088 | 0.8267 | 0.8176 | 0.9025 | 0.1735 |
+| lightgbm_nested | Role 1 | 0.8109 ± 0.0099 | 0.8056 | 0.8234 | 0.8142 | 0.9042 | 35.7492* |
 | lightgbm_default | Role 4 | 0.8106 ± 0.0121 | 0.8080 | 0.8188 | 0.8132 | 0.9030 | 0.1002 |
 | random_forest (tuned) | Role 3 | 0.8060 ± 0.0131 | 0.8129 | 0.7991 | 0.8057 | 0.8950 | 2.0473 |
+| random_forest_nested | Role 1 | 0.8025 ± 0.0133 | 0.8078 | 0.7979 | 0.8026 | 0.8944 | 53.2444* |
 | random_forest_default | Role 3 | 0.8005 ± 0.0128 | 0.8270 | 0.7638 | 0.7940 | 0.8852 | 1.2509 |
 | logistic_regression | Role 2 | 0.7741 ± 0.0071 | 0.7668 | 0.7922 | 0.7792 | 0.8525 | 0.0448 |
 | dummy_most_frequent | Role 2 | 0.4963 ± 0.0141 | 0.3999 | 0.8000 | 0.5332 | 0.5000 | 0.0025 |
 
-Printed conclusion (verbatim): "LightGBM (tuned) has the highest mean CV accuracy, 0.8142 ± 0.0112, 0.8 points ahead of Random Forest (tuned) (0.8060 ± 0.0131). The gap is within one standard deviation, so the difference may not be meaningful. It fits in 0.17 s per fold against 2.05 s. Tuning adds 0.4 points over LightGBM (default) (0.8106 ± 0.0121), also within one standard deviation. Every model beats the Dummy floor of 0.4963, so they all learned real signal."
+\* Nested rows come from `05b_nested_cv.py` (Role 1, issue #16): an honest re-score of the tuned model, not a separate model. Their fit time includes the whole inner search, so it is not comparable.
+
+Printed conclusion (verbatim): "LightGBM (tuned) has the highest mean CV accuracy, 0.8142 ± 0.0112, 0.8 points ahead of Random Forest (tuned) (0.8060 ± 0.0131). The gap is within one standard deviation, so the difference may not be meaningful. It fits in 0.17 s per fold against 2.05 s. Tuning adds 0.4 points over LightGBM (default) (0.8106 ± 0.0121), also within one standard deviation. Nested CV, which removes the luck of picking the best of many settings, gives LightGBM (nested CV) 0.8109 ± 0.0099, 0.3 points below the tuned score: that is the honest estimate for new data. Every model beats the Dummy floor of 0.4963, so they all learned real signal."
 
 The 0.8- and 0.4-point gaps above are printed by the script. One extra gap for Q&A, by plain subtraction of the printed means: tuning added 0.0055 accuracy to Random Forest (0.8060 vs 0.8005).
 
@@ -82,7 +86,7 @@ What's not done yet and who needs what from me.
 - [ ] Build slides from `reports/`: read reports regularly, ask owners when a section is empty or a number doesn't match `results.csv`
 - [ ] Keep this report up to date: slide plan with source reports, missing content, rehearsal notes (timing, who presents what)
 - [ ] `notes/qa_prep.md`: collect section 8 from every report + likely questions ("Why GroupKFold?", "Why accuracy?", "Why drop Name?", "How did you prevent leakage?", "Why this model?"); make sure every member rehearses them
-- [x] `06_compare.py` (with Role 1): comparison table and chart from `results.csv` (mean ± std across folds) – script, `results/model_comparison.csv` and plots 12–13 done; not yet committed or merged (Pun to review)
+- [x] `06_compare.py` (with Role 1): comparison table and chart from `results.csv` (mean ± std across folds) – script, `results/model_comparison.csv` and plots 12–13 done; merged in PR #13. Nested-CV rows added by Role 1 (issue #16): they show in the table and chart 12 but never as the runner-up or in chart 13
 - [ ] State on slide 10 that tuned LightGBM's lead over LightGBM default (0.4 pts: 0.8142 vs 0.8106) and over Random Forest tuned (0.8142 vs 0.8060) is within one std, so the choice rests on the best mean plus speed, not on a proven difference
 - [ ] Re-run `python 06_compare.py` whenever a model script is re-run, so the table and plots match `results.csv`
 - [x] Teamwork evidence: decided to use the `CLAUDE.md` Status checklist + GitHub PRs instead of a task board and `notes/meetings.md` (see section 3). `CLAUDE.md` updated to match (Pun to review the PR).

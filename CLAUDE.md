@@ -41,6 +41,7 @@ DS Model Training/
 ├── 03_baseline.py            # Role 2 – Dummy + Logistic Regression
 ├── 04_random_forest.py       # Role 3 – Random Forest + tuning
 ├── 05_lightgbm.py            # Role 4 – LightGBM + tuning
+├── 05b_nested_cv.py          # Role 1 – nested CV: unbiased score for the tuned models (slow, issue #16)
 ├── 06_compare.py             # Role 5 (with Role 1) – comparison table and charts from results.csv
 ├── 07_final_model.py         # Role 1 – retrain the best model on all of train.csv, write submission.csv
 ├── plots/                    # all charts, numbered NN_name.png (used in slides)
