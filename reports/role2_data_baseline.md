@@ -15,6 +15,7 @@ Last updated: 2026-11-15 · Status: Done
 4. Checks in `02_prepare.py`: before/after columns, the gaps each rule fills, every column accounted for, add_features() identical per fold vs the whole file, and no missing values after the preprocessor.
 5. Baselines in `03_baseline.py`: DummyClassifier(most_frequent) and Logistic Regression, both logged with `evaluate()`, plus a coefficient chart.
 6. **Next phase, issue #17 (group-aware imputation, with Role 1):** `02b_feature_experiments.py` prints how often group mates agree, then scores each candidate change with the final model on the same 5 shared folds, fold by fold, plus two untuned models as a check (runs in ~17 s). Result: dropped; `src/features.py` unchanged.
+7. **Next phase, issue #18 (richer features, with Role 1):** three candidate features, each tested alone in `02b_feature_experiments.py`: family members in the travel group (same surname), cabin region (`CabinNum // 300`, 7 regions) and each bill's share of `TotalSpend`. All three dropped; `src/features.py` unchanged.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -35,6 +36,9 @@ Last updated: 2026-11-15 · Status: Done
 | Group fill (#17) not adopted | It lowered the final model by 0.55 pts (worse on 4/5 folds) and moved untuned models by between −0.17 and +0.14 pts; the rule needs a gain above 2 standard errors of the per-fold gains | `python 02b_feature_experiments.py` |
 | Paired decision rule: mean gain > 2 × standard error of the per-fold gains | Both sides use the same folds, so fold difficulty cancels; the fold-to-fold std of the scores (1.12 pts) would overstate the noise | Docstring of `02b_feature_experiments.py` |
 | Only HomePlanet and Side were candidates for group fill (Deck tested as a variant) | Among multi-person groups with ≥ 2 known values, they agree in 100% (train and test); Deck 69.2% / 64.2%, Destination 47.7% / 50.0%, CryoSleep 40.5% / 41.3%, Age 1.5% / 1.6% (train / test) | Printed by `python 02b_feature_experiments.py` |
+| Family size counted inside the travel group, not the whole file | A file-wide surname count would be about 2× larger in train (8,693 rows) than test (4,277), skewing train vs test; a group never spans folds or files | Docstring of `add_family_in_group()` in `02b_feature_experiments.py` |
+| None of the #18 features adopted | Each lowered the final model (−0.45, −0.30, −0.29 pts, worse on 4/5 folds) | `python 02b_feature_experiments.py` |
+| Spending ratios not adopted although they help Logistic Regression | +1.97 pts for Logistic Regression (better on 5/5 folds), but −0.29 pts for the final model; the shared preprocessor serves every model, and the final model decides | `python 02b_feature_experiments.py` |
 
 ## 4. Results
 From `results/results.csv` (5-fold GroupKFold, `evaluate()`):
@@ -62,6 +66,16 @@ Fit time changes slightly with each run; the values above are the ones in the co
 
 - Fillable gaps: in train, 90 HomePlanet and 100 Side values (and 100 Deck) could be filled from group mates, out of 201 / 199 / 199 missing.
 - Scale of the change: 190 values in train (90 HomePlanet + 100 Side) out of 8,693 passengers, so it can only move a small number of predictions.
+
+**Issue #18: richer features**, each added alone (`python 02b_feature_experiments.py`, accuracy on the 5 shared folds; gain vs current features, folds better):
+
+| Model | Current | + family size in group | + cabin region | + spending ratios |
+|---|---|---|---|---|
+| tuned LightGBM (decides) | 0.8142 ± 0.0112 | 0.8097 (−0.45 pts, 1/5) | 0.8112 (−0.30 pts, 0/5) | 0.8113 (−0.29 pts, 1/5) |
+| default LightGBM (check) | 0.8106 ± 0.0121 | 0.8108 (+0.01 pts, 2/5) | 0.8095 (−0.12 pts, 1/5) | 0.8109 (+0.02 pts, 2/5) |
+| Logistic Regression (check) | 0.7741 ± 0.0071 | 0.7738 (−0.02 pts, 1/5) | 0.7761 (+0.21 pts, 3/5) | 0.7937 (+1.97 pts, 5/5) |
+
+- Reading: tree models already combine spending columns and CabinNum themselves, so hand-made ratios and bins add nothing for them; a linear model cannot build ratios, which is why Logistic Regression gains.
 
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
@@ -113,9 +127,11 @@ Fit time changes slightly with each run; the values above are the ones in the co
 | Does the model generalise to test? | Train and test distributions match: at most 1.7 pp difference in category shares, and SMD < 0.02 for numeric columns. |
 | Did you try filling gaps from travel-group members? | Yes (issue #17). HomePlanet and Side agree in 100% of groups, so the fill is very likely correct, but it did not improve CV: −0.55 pts for the final model (worse on 4/5 folds) and between −0.17 and +0.14 pts for untuned models. We kept the simpler pipeline. |
 | How did you test it without leakage? | The fill sat inside the Pipeline and only used group mates in the same batch; GroupKFold keeps a group in one fold, so nothing crossed folds and the target was never read. |
+| Did you try more features? | Yes (issue #18): family members in the travel group, cabin regions and spending shares, each tested alone on the shared folds. None helped the final model (−0.29 to −0.45 pts), so none was added. |
+| Why did spending shares help Logistic Regression but not LightGBM? | A linear model cannot form ratios itself (+1.97 pts for it); trees split on the spending columns directly, so the ratios add nothing new for LightGBM (−0.29 pts). |
 
 ## 9. Open items / handover
-- Issue #17 closed as **not adopted** (evidence above). Issue #18 (richer features) is next, using the same `02b_feature_experiments.py`.
+- Issues #17 and #18 closed as **not adopted** (evidence above). `src/features.py` is unchanged, so no other script needs a re-run.
 - `src/features.py` was merged in PR #7 after Role 1 approved it. Roles 3 and 4 reuse it unchanged: `04_random_forest.py` and `05_lightgbm.py` both build `X = add_features(df).drop(columns=[TARGET])` and `Pipeline([("prep", build_preprocessor()), ("model", ...)])`.
 - **How the tuned models compare with my baseline** (from `results/results.csv`, same folds):
 
