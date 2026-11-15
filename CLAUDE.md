@@ -38,6 +38,7 @@ DS Model Training/
 │   └── features.py           # Role 2 – add_features(), build_preprocessor(), feature lists
 ├── 01_explore.py             # Role 2 – EDA
 ├── 02_prepare.py             # Role 2 – demonstrates and checks the feature and preprocessing steps
+├── 02b_feature_experiments.py # Role 2 with Role 1 – does a feature change help? paired test on the shared folds (#17, #18)
 ├── 03_baseline.py            # Role 2 – Dummy + Logistic Regression
 ├── 04_random_forest.py       # Role 3 – Random Forest + tuning
 ├── 05_lightgbm.py            # Role 4 – LightGBM + tuning

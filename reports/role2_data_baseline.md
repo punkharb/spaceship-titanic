@@ -1,5 +1,5 @@
 # Role 2 – Data + baseline model (Champ)
-Last updated: 2026-10-31 · Status: Done
+Last updated: 2026-11-15 · Status: Done
 
 ## 1. Slide summary
 - Balanced target: **50.4%** transported (4,378 vs 4,315), so accuracy is a fair main metric.
@@ -14,6 +14,7 @@ Last updated: 2026-10-31 · Status: Done
 3. Preprocessing in `build_preprocessor()` (`src/features.py`): median imputation + StandardScaler for numeric columns, most-frequent imputation + OneHotEncoder(handle_unknown="ignore") for categorical columns. Returned unfitted.
 4. Checks in `02_prepare.py`: before/after columns, the gaps each rule fills, every column accounted for, add_features() identical per fold vs the whole file, and no missing values after the preprocessor.
 5. Baselines in `03_baseline.py`: DummyClassifier(most_frequent) and Logistic Regression, both logged with `evaluate()`, plus a coefficient chart.
+6. **Next phase, issue #17 (group-aware imputation, with Role 1):** `02b_feature_experiments.py` prints how often group mates agree, then scores each candidate change with the final model on the same 5 shared folds, fold by fold, plus two untuned models as a check (runs in ~17 s). Result: dropped; `src/features.py` unchanged.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -29,8 +30,11 @@ Last updated: 2026-10-31 · Status: Done
 | Add GroupSize | Solo travellers differ | Solo 45% transported vs 57% in groups |
 | log1p of spending + TotalSpend | Heavy right skew would let a few huge bills dominate the linear model | Skewness 6–13; spenders transported 26–35% vs 59–64% for non-spenders; `plots/06_spending_vs_target.png` |
 | Drop PassengerId, Name, Cabin | ID-like: a model could only memorise them | Name is 99.6% unique |
-| No filling from other group members | Uses other rows' data, which shared rule 5 doesn't allow | Kept add_features() strictly row-wise |
+| No filling from other group members in `add_features()` | Uses other rows' data, which rule 5 doesn't allow there; tested inside the Pipeline in #17 and not adopted | Kept add_features() strictly row-wise |
 | Logistic, not Linear, Regression | The target is True/False; Logistic outputs a probability, Linear an unbounded number | — |
+| Group fill (#17) not adopted | It lowered the final model by 0.55 pts (worse on 4/5 folds) and moved untuned models by between −0.17 and +0.14 pts; the rule needs a gain above 2 standard errors of the per-fold gains | `python 02b_feature_experiments.py` |
+| Paired decision rule: mean gain > 2 × standard error of the per-fold gains | Both sides use the same folds, so fold difficulty cancels; the fold-to-fold std of the scores (1.12 pts) would overstate the noise | Docstring of `02b_feature_experiments.py` |
+| Only HomePlanet and Side were candidates for group fill (Deck tested as a variant) | Among multi-person groups with ≥ 2 known values, they agree in 100% (train and test); Deck 69.2% / 64.2%, Destination 47.7% / 50.0%, CryoSleep 40.5% / 41.3%, Age 1.5% / 1.6% (train / test) | Printed by `python 02b_feature_experiments.py` |
 
 ## 4. Results
 From `results/results.csv` (5-fold GroupKFold, `evaluate()`):
@@ -47,6 +51,17 @@ Fit time changes slightly with each run; the values above are the ones in the co
 - Train vs validation gap for Logistic Regression is **0.2 points** (0.7758 vs 0.7741), so it does not overfit.
 - After preprocessing there are **29 model inputs** (9 numeric + 20 one-hot) and **0** missing values in validation and test.
 - Train vs test: category shares differ by at most **1.7 pp**, and every numeric column has a standardised mean difference below **0.02**.
+
+**Issue #17: group-aware imputation** (`python 02b_feature_experiments.py`, accuracy on the 5 shared folds):
+
+| Model | Current features | + group fill HomePlanet, Side | + group fill HomePlanet, Side, Deck |
+|---|---|---|---|
+| tuned LightGBM (decides) | 0.8142 ± 0.0112 | 0.8087 (−0.55 pts, better on 1/5 folds) | 0.8123 (−0.20 pts, 1/5) |
+| default LightGBM (check) | 0.8106 ± 0.0121 | 0.8108 (+0.01 pts, 2/5) | 0.8089 (−0.17 pts, 1/5) |
+| Logistic Regression (check) | 0.7741 ± 0.0071 | 0.7755 (+0.14 pts, 4/5) | 0.7738 (−0.02 pts, 2/5) |
+
+- Fillable gaps: in train, 90 HomePlanet and 100 Side values (and 100 Deck) could be filled from group mates, out of 201 / 199 / 199 missing.
+- Scale of the change: 190 values in train (90 HomePlanet + 100 Side) out of 8,693 passengers, so it can only move a small number of predictions.
 
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
@@ -96,9 +111,11 @@ Fit time changes slightly with each run; the values above are the ones in the co
 | How much better are the tree models than your baseline? | Tuned LightGBM is 0.8142 and tuned Random Forest 0.8060, vs 0.7741 for Logistic Regression: +4.0 and +3.2 points, more than the fold-to-fold std. Trees can combine features (interactions) and bend at thresholds, which a linear model can't. |
 | Why is CryoSleep not the biggest coefficient? | Sleepers never spend, so the spending columns already carry most of CryoSleep's information and the model splits the credit. Its transported rate (82% vs 33%) is the clearer measure of its strength. |
 | Does the model generalise to test? | Train and test distributions match: at most 1.7 pp difference in category shares, and SMD < 0.02 for numeric columns. |
+| Did you try filling gaps from travel-group members? | Yes (issue #17). HomePlanet and Side agree in 100% of groups, so the fill is very likely correct, but it did not improve CV: −0.55 pts for the final model (worse on 4/5 folds) and between −0.17 and +0.14 pts for untuned models. We kept the simpler pipeline. |
+| How did you test it without leakage? | The fill sat inside the Pipeline and only used group mates in the same batch; GroupKFold keeps a group in one fold, so nothing crossed folds and the target was never read. |
 
 ## 9. Open items / handover
-- Nothing open for Role 2.
+- Issue #17 closed as **not adopted** (evidence above). Issue #18 (richer features) is next, using the same `02b_feature_experiments.py`.
 - `src/features.py` was merged in PR #7 after Role 1 approved it. Roles 3 and 4 reuse it unchanged: `04_random_forest.py` and `05_lightgbm.py` both build `X = add_features(df).drop(columns=[TARGET])` and `Pipeline([("prep", build_preprocessor()), ("model", ...)])`.
 - **How the tuned models compare with my baseline** (from `results/results.csv`, same folds):
 
