@@ -25,13 +25,18 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_validate
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.config import ID_COL, RESULTS_DIR, SEED, TARGET, TEST_PATH, TRAIN_PATH
 from src.evaluation import get_cv, get_groups
-from src.features import add_features, build_preprocessor
+from src.features import SPEND_COLUMNS, add_features, build_preprocessor
+
+CABIN_REGION_SIZE = 300  # CabinNum runs 0-1894, so 7 regions along each deck
 
 
 class GroupModeImputer(TransformerMixin, BaseEstimator):
@@ -83,11 +88,73 @@ def with_group_fill(columns):
                              ("prep", build_preprocessor())])
 
 
+def add_family_in_group(df):
+    """#18: travel-group mates sharing the passenger's surname (incl. themself).
+
+    Counted inside the travel group, not the whole file: a group never spans
+    folds or files, and a file-wide count would be about 2x larger in
+    train.csv (8,693 rows) than in test.csv (4,277), skewing train vs test.
+    """
+    df = df.copy()
+    key = get_groups(df) + "_" + df["Name"].str.split().str[-1]
+    df["FamilyInGroup"] = key.map(key.value_counts())  # unknown name -> NaN -> imputed
+    return df
+
+
+def add_cabin_region(df):
+    """#18: which stretch of the deck the cabin is on (fixed-width, row-wise)."""
+    df = df.copy()
+    df["CabinRegion"] = (df["CabinNum"] // CABIN_REGION_SIZE).map(
+        lambda v: str(int(v)), na_action="ignore")
+    return df
+
+
+def add_spend_ratios(df):
+    """#18: each bill as a share of the passenger's total (0 if they spent nothing)."""
+    df = df.copy()
+    for c in SPEND_COLUMNS:
+        # Total 0 and this bill known -> share 0; an unknown bill stays NaN (imputed).
+        df[f"{c}_share"] = (df[c] / df["TotalSpend"]).mask(
+            (df["TotalSpend"] == 0) & df[c].notna(), 0.0)
+    return df
+
+
+def with_extra_columns(numeric=(), categorical=()):
+    """Preprocessor variant: the shared preprocessor plus the new columns,
+    imputed and encoded exactly like the existing ones (fitted per fold)."""
+    def make():
+        return ColumnTransformer([
+            ("shared", build_preprocessor(), lambda X: list(X.columns)),
+            ("num", Pipeline([("impute", SimpleImputer(strategy="median")),
+                              ("scale", StandardScaler())]), list(numeric)),
+            ("cat", Pipeline([("impute", SimpleImputer(strategy="most_frequent")),
+                              ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))]),
+             list(categorical)),
+        ])
+    return make
+
+
+def features_plus(*steps):
+    """add_features() followed by extra row-wise feature steps."""
+    def make(df):
+        df = add_features(df)
+        for step in steps:
+            df = step(df)
+        return df
+    return make
+
+
 # name -> (add_features function, preprocessor factory)
 VARIANTS = {
     "current features": (add_features, build_preprocessor),
     "#17 group fill: HomePlanet, Side": (add_features, with_group_fill(["HomePlanet", "Side"])),
     "#17 group fill: + Deck": (add_features, with_group_fill(["HomePlanet", "Side", "Deck"])),
+    "#18 family size in group": (features_plus(add_family_in_group),
+                                 with_extra_columns(numeric=["FamilyInGroup"])),
+    "#18 cabin region": (features_plus(add_cabin_region),
+                         with_extra_columns(categorical=["CabinRegion"])),
+    "#18 spending ratios": (features_plus(add_spend_ratios),
+                            with_extra_columns(numeric=[f"{c}_share" for c in SPEND_COLUMNS])),
 }
 
 
@@ -153,6 +220,30 @@ def _self_test():
     other = pd.DataFrame({ID_COL: ["0001_03"], "HomePlanet": [None]})
     assert GroupModeImputer(["HomePlanet"]).fit(df).transform(other)["HomePlanet"].isna().all()
     print("Self-test passed: GroupModeImputer fills only from group mates in the same batch.")
+
+    # #18 features, all row-wise or counted inside the travel group.
+    people = pd.DataFrame({
+        ID_COL: ["0001_01", "0001_02", "0001_03", "0002_01"],
+        "Name": ["Ann Lee", "Bob Lee", "Cat Ray", None],
+        "CabinNum": [0.0, 299.0, 300.0, None],
+        **{c: [10.0, 0.0, 0.0, None] for c in SPEND_COLUMNS},
+        "TotalSpend": [50.0, 0.0, 0.0, None],
+    })
+    fam = add_family_in_group(people)["FamilyInGroup"]
+    assert fam.tolist()[:3] == [2, 2, 1] and pd.isna(fam.iloc[3])  # unknown name stays missing
+    assert add_cabin_region(people)["CabinRegion"].fillna("?").tolist() == ["0", "0", "1", "?"]
+    ratio = add_spend_ratios(people)
+    assert ratio["RoomService_share"].tolist()[:3] == [0.2, 0.0, 0.0]  # no spending -> 0, not NaN
+    assert pd.isna(ratio["RoomService_share"].iloc[3])
+    # A missing bill stays missing even when the known total is 0.
+    gap = people.assign(RoomService=[10.0, None, 0.0, None])
+    assert pd.isna(add_spend_ratios(gap)["RoomService_share"].iloc[1])
+
+    # The variant adds exactly the new columns on top of the shared ones.
+    X = add_family_in_group(add_features(pd.read_csv(TRAIN_PATH).head(200)))
+    base = build_preprocessor().fit_transform(X).shape[1]
+    assert with_extra_columns(numeric=["FamilyInGroup"])().fit_transform(X).shape[1] == base + 1
+    print("Self-test passed: #18 feature functions work.")
 
 
 if __name__ == "__main__":
