@@ -1,0 +1,14 @@
+{
+  "model__lightgbm__subsample_freq": 1,
+  "model__lightgbm__subsample": 1.0,
+  "model__lightgbm__num_leaves": 15,
+  "model__lightgbm__n_estimators": 500,
+  "model__lightgbm__min_child_samples": 20,
+  "model__lightgbm__max_depth": 4,
+  "model__lightgbm__learning_rate": 0.03,
+  "model__lightgbm__colsample_bytree": 0.8,
+  "model__random_forest__n_estimators": 200,
+  "model__random_forest__min_samples_leaf": 4,
+  "model__random_forest__max_features": "sqrt",
+  "model__random_forest__max_depth": 20
+}

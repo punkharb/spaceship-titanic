@@ -1,5 +1,5 @@
 # Role 4 – Model C: LightGBM (Get)
-Last updated: 2026-10-30 · Status: Done
+Last updated: 2026-11-19 · Status: Done
 
 ## 1. Slide summary
 - Tuned LightGBM reaches **81.42% ± 1.12** cross-validated accuracy (ROC-AUC 0.9025), **+4.01 points** above Logistic Regression (77.41%).
@@ -8,6 +8,7 @@ Last updated: 2026-10-30 · Status: Done
 - The model relies most on **spending** (Spa, VRDeck, FoodCourt) and **CryoSleep**; GroupSize and VIP add almost nothing.
 - vs tuned Random Forest (80.60%): LightGBM is **+0.82 points** ahead, but that is **within the fold-to-fold spread (~1.31 points)**, so the two are effectively tied. LightGBM has higher F1 and ROC-AUC and fits more than 10× faster per fold (0.17 s vs 2.05 s).
 - The whole search (30 settings × 5 folds) took **25–27 seconds**.
+- **Blend (issue #19):** a 50/50 soft-voting blend of tuned LightGBM + tuned RF scores **80.93% ± 1.29**, **0.49 points below LightGBM alone** (within noise). The two models agree on 93% of passengers, and where they disagree LightGBM is right more often, so averaging adds nothing. LightGBM stays the final model.
 
 ## 2. What I did
 1. Scored LightGBM with default settings using the shared `evaluate()` → row `lightgbm_default` (`05_lightgbm.py`, step 1).
@@ -17,6 +18,7 @@ Last updated: 2026-10-30 · Status: Done
 5. Permutation importance on the validation folds only, averaged over the 5 folds (`permutation_importance_cv()`) → `plots/11_lightgbm_permutation_importance.png`.
 6. Compared with the baselines and Role 3's Random Forest in `results.csv` (`compare_with_others()`), re-run on up-to-date main after Role 3's merge.
 7. Checked: the script gives identical results on a second run; the saved params pass `07_final_model.py`'s `load_params()` check; leakage review found no leakage.
+8. Issue #19: built a 50/50 soft-voting blend of the tuned LightGBM and tuned Random Forest (`05c_blend.py`). Rebuilt both from their saved `best_params_*.json` (checked against `results.csv`), scored with `evaluate()` → row `lgbm_rf_blend`, ran an overfitting check and an out-of-fold agreement analysis, and compared against both models.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -27,6 +29,9 @@ Last updated: 2026-10-30 · Status: Done
 | Plain Python lists instead of scipy distributions | The chosen values must survive JSON unchanged, because 07 checks the json file against the params in `results.csv` | `load_params("lightgbm")` passes |
 | `refit=False` in the search | `evaluate()` refits per fold, and the final fit on all data is Role 1's job (07); a refit here would be wasted time | – |
 | Permutation importance on validation folds, shuffling original columns | Measures what helps on *unseen* passengers; one-hot columns are judged together (e.g. "Deck", not "Deck_F") | `plots/11_lightgbm_permutation_importance.png` |
+| Blend: fixed 50/50 weights, no weight tuning | Tuning the weights on the same folds would be another lucky pick (more optimistic score). With fixed weights the blend adds no selection of its own and keeps issue #19's tuning budget | Issue #19 rules; `05c_blend.py` docstring |
+| Blend: rebuild both models from `best_params_*.json`, checked with 07's `load_params()` | Guarantees we blend exactly the models whose CV scores are on the slides | `05c_blend.py` step 1 |
+| Blend: one shared `build_preprocessor()` before a `VotingClassifier(voting="soft")` | Same preparation step as every model (rule 4); soft voting uses the probabilities, so a confident model counts more than an unsure one | – |
 | Names `lightgbm_default` / `lightgbm` | CLAUDE.md contract: 07 looks for `lightgbm` + `best_params_lightgbm.json` | `results/results.csv` |
 
 ## 4. Results
@@ -93,6 +98,26 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 - **Both models agree on what matters:** spending (Spa, VRDeck, FoodCourt) and CryoSleep are the top 4 features in both, which makes the finding robust to the model choice.
 - **Practical tie-breaker:** with accuracy within noise, LightGBM also has higher F1 (0.8176 vs 0.8057) and ROC-AUC (0.9025 vs 0.8950), a smaller overfitting gap, and fits more than 10× faster per fold (0.1735 s vs 2.0473 s). The forest has slightly higher precision (0.8129 vs 0.8088), LightGBM higher recall (0.8267 vs 0.7991). The final choice is Role 1's (`07_final_model.py`).
 
+**Soft-voting blend: LightGBM + Random Forest (issue #19, `05c_blend.py`)**
+
+Each model's probability of "transported" is averaged 50/50; the blend predicts True when the average is above 0.5.
+
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC | Fit time / fold |
+|---|---|---|---|---|---|---|
+| **LightGBM tuned** | **0.8142 ± 0.0112** | 0.8088 | **0.8267** | **0.8176** | **0.9025** | **0.1735 s** |
+| Blend 50/50 (`lgbm_rf_blend`) | 0.8093 ± 0.0129 | 0.8078 | 0.8154 | 0.8114 | 0.9022 | 1.1861 s |
+| Random Forest tuned | 0.8060 ± 0.0131 | **0.8129** | 0.7991 | 0.8057 | 0.8950 | 2.0473 s |
+
+- Script output: "blend vs lightgbm: -0.49 points (within the fold-to-fold spread, std ~1.29 points)"; "blend vs random_forest: +0.32 points (within the fold-to-fold spread, std ~1.31 points)".
+- **Overfitting:** train 0.8815 vs validation 0.8093 → **7.2-point gap**, between LightGBM (4.0) and RF (9.2). The deep RF trees bring their memorisation into the blend.
+- **Out-of-fold confusion matrix** (rows = true, columns = predicted): not transported 3,466 / 849; transported 809 / 3,569.
+- **Why the blend doesn't help** (out-of-fold, same folds):
+  - The two models' probabilities correlate at **0.9648**. They predict different classes for only **607 of 8,693 passengers (7.0%)**.
+  - Blending can only change those 607: where both models agree, their average is on the same side of 0.5.
+  - On those 607, **LightGBM alone is right 55.8%**, Random Forest 44.2%, the blend 48.8%. Averaging in the weaker forest costs LightGBM some of its correct answers.
+  - A blend helps when the models are about equally good *and* make different mistakes. Here LightGBM is the stronger model and the two mostly make the same mistakes.
+- **Decision:** the blend does not beat the current best by more than one std (it is below it), so `07_final_model.py` stays on LightGBM (issue #19 rule).
+
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
 |---|---|---|
@@ -106,11 +131,13 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 - Scored with the shared `evaluate()`; `07_final_model.py` rebuilds exactly the validated model (leakage review: identical predictions).
 - **Honest caveat:** 0.8142 is the best of 30 settings, scored on the same folds that chose it, so it is slightly optimistic (probably a few tenths of a point). Expect about 0.81 on new data. Random Forest is tuned the same way on the same folds, so the RF vs LightGBM comparison stays fair. Nested CV would remove this bias at 5× the cost; we judged it unnecessary.
 - The importance chart uses the same validation rows that chose the settings; the effect on the ranking is negligible.
+- Blend: same `get_cv()` folds, preprocessing inside the Pipeline, `random_state=SEED` in both models, test.csv never read. The agreement figures use out-of-fold probabilities (`cross_val_predict` on `get_cv()`), so every passenger is judged by models that never saw them. The component params were chosen on these folds, so the blend inherits their small best-of-30 optimism, but it adds none of its own (fixed weights). Two runs gave identical scores.
 
 ## 7. Problems and how I fixed them
 - PC had only Python 3.10 without packages; the team pins Python 3.14 versions → installed Python 3.14 and a project `.venv` with `requirements.txt`.
 - Thai Windows console (cp874) can't print "±" → `UnicodeEncodeError` → run with `PYTHONUTF8=1` (affects every script; flagged to Role 1).
 - LightGBM silently ignores `subsample` without `subsample_freq` → added `subsample_freq: [1]` to the search space so it is saved and reused by 07.
+- Blend script: the first draft of the conclusion was written before seeing the numbers ("disagree on only…") → rewrote it to print what the data says (who is right where the models disagree).
 - First printout called a difference bigger than one std "a real difference" → reworded to "larger than the fold-to-fold spread", because it is a rule of thumb, not a test.
 
 ## 8. Likely Q&A questions
@@ -125,6 +152,10 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 | Why `subsample_freq = 1`? | LightGBM ignores `subsample` unless bagging is switched on; saving it means the final model is exactly the validated one. |
 | How do you know it's not overfitting? | Train 85.45% vs validation 81.42% (4.0-point gap), down from 8.6 points with default settings. |
 | Why permutation importance and not LightGBM's built-in importance? | Built-in importance counts splits on training data; permutation measures accuracy lost on unseen validation passengers. |
+| What is soft voting? | Each model gives a probability of "transported"; the blend averages them (50/50) and predicts True above 0.5. Hard voting would count yes/no votes instead. |
+| Why didn't the LightGBM + RF blend help? | The two models agree on 93% of passengers (probability correlation 0.96), so blending only changes 7%. On those, LightGBM is right 55.8% vs the blend 48.8%: averaging with the weaker forest costs correct answers. Result: 80.93% vs 81.42%, within noise. |
+| Why not tune the blend weights? | That would be another best-of-many pick on the same folds, making the score more optimistic. Fixed 50/50 adds no selection; issue #19 asked to keep the same tuning budget. |
+| When would a blend help? | When the models are about equally strong and make different mistakes (low correlation). Here one model is stronger and they mostly make the same mistakes. |
 | Why are the spending features so important? | Spending means the passenger was awake and active; EDA showed sleepers spend nothing and are transported far more often. |
 
 ## 9. Open items / handover
@@ -133,6 +164,9 @@ Errors are balanced between the two classes (856 false positives vs 759 false ne
 - [x] Leakage review passed (no leakage)
 - [x] Compared with Random Forest (re-run on up-to-date main after Role 3's merge; section 4)
 - [x] Report complete
+- [x] Issue #19 (Role 4 part): 50/50 soft-voting blend in `05c_blend.py`, `lgbm_rf_blend` row and `best_params_lgbm_rf_blend.json`; leakage review done. Does not beat LightGBM → no change to 07.
+- For Role 5/1 (`06_compare.py`): add `"lgbm_rf_blend": "LightGBM + RF blend (50/50)"` to `LABELS`, otherwise the chart shows the raw name. 06's conclusion now names the blend (not RF) as LightGBM's closest rival from another algorithm; the slide text may need updating.
+- For Role 3 (issue #19): CatBoost/XGBoost part is still open.
 - For Role 1 (07): `lightgbm` row and `best_params_lightgbm.json` are in place. LightGBM vs RF is within noise (+0.82 vs ~1.31 points spread); see section 4 for the tie-breakers.
 - For Role 1: the Thai console needs `PYTHONUTF8=1` to print "±" and "≈"; `evaluate()` rewriting the CSV trims the last float digits of other rows (cosmetic diff only).
 - Role 3 flagged that `05_lightgbm.py` prints "≈", which crashes on Windows consoles that can't encode it when output is redirected. With `PYTHONUTF8=1` the run completed (run log contains the line). Not changed in code yet.
