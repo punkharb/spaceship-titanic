@@ -21,9 +21,20 @@ Experiments are not logged to results.csv: they are decisions about the
 features, not models. Kept changes go into src/features.py, and 03-07 are
 re-run so every logged score uses them.
 
+Two follow-up questions for #18, because "one at a time, saved parameters"
+could hide a real gain:
+- Do the features help *together*? -> the "#18 combined" variants.
+- Were the saved LightGBM parameters unfair to a new feature, since they were
+  tuned on the current features? -> --retune repeats Role 4's random search
+  (same space, same 30 settings, same seed) for each feature set, then
+  repeats the comparison on 10 reshuffled group splits, because a narrow
+  pass after many tries needs a second look.
+
 Run from the project folder:  python 02b_feature_experiments.py
+Re-tuning check (~3 min):     python 02b_feature_experiments.py --retune
 Self-test:                    python 02b_feature_experiments.py --self-test
 """
+import importlib
 import json
 import sys
 
@@ -32,15 +43,16 @@ import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_validate
+from sklearn.model_selection import GroupKFold, RandomizedSearchCV, cross_validate
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import KBinsDiscretizer
 
-from src.config import ID_COL, RESULTS_DIR, SEED, TARGET, TEST_PATH, TRAIN_PATH
+from src.config import ID_COL, N_SPLITS, RESULTS_DIR, SEED, TARGET, TEST_PATH, TRAIN_PATH
 from src.evaluation import get_cv, get_groups
 from src.features import SPEND_COLUMNS, add_features, build_preprocessor
 
+N_RESHUFFLES = 10   # extra group splits for the second look in --retune
 REGION_WIDTH = 300  # cabin numbers per region; fixed before looking at any score
 
 
@@ -170,6 +182,18 @@ def add_luxury_share(df):
     return df
 
 
+def combined(*adders):
+    """Feature function that applies several #18 ideas at once."""
+    def add(df):
+        out = adders[0](df)
+        for adder in adders[1:]:
+            more = adder(df)
+            new = [c for c in more.columns if c not in out.columns]
+            out[new] = more[new]
+        return out
+    return add
+
+
 def with_columns(numeric=(), categorical=(), extra=()):
     """Preprocessor variant: the shared one plus the new columns.
 
@@ -243,7 +267,22 @@ VARIANTS = {
     "#18 spending: 5 shares of TotalSpend": (
         add_spend_shares, with_columns(numeric=[f"{c}_share" for c in SPEND_COLUMNS])),
     "#18 spending: LuxuryShare": (add_luxury_share, with_columns(numeric=["LuxuryShare"])),
+    # Together: the best version of each idea, in case they only help jointly.
+    "#18 combined: LuxuryShare + fixed regions": (
+        combined(add_luxury_share, add_cabin_region),
+        with_columns(numeric=["LuxuryShare"], categorical=["CabinRegion"])),
+    "#18 combined: LuxuryShare + FamilyInGroup": (
+        combined(add_luxury_share, add_family_in_group),
+        with_columns(numeric=["LuxuryShare", "FamilyInGroup"])),
+    "#18 combined: LuxuryShare + fixed regions + FamilyInGroup": (
+        combined(add_luxury_share, add_cabin_region, add_family_in_group),
+        with_columns(numeric=["LuxuryShare", "FamilyInGroup"], categorical=["CabinRegion"])),
 }
+
+# Feature sets worth the 2-minute re-tuning check: the only candidate with a
+# positive gain, and the best combination.
+RETUNE = ["current features", "#18 spending: LuxuryShare",
+          "#18 combined: LuxuryShare + fixed regions"]
 
 
 def models(params):
@@ -266,6 +305,79 @@ def fold_scores(make_features, make_prep, make_model, raw):
     return pd.Series(cv["test_score"])
 
 
+def verdict(gain):
+    """The keep rule: mean per-fold gain > 2 standard errors of those gains."""
+    se = gain.std(ddof=1) / np.sqrt(len(gain))
+    return f" -> {'KEEP' if gain.mean() > 2 * se else 'drop'}: needs > 2 x SE = {2 * se * 100:.2f} pts"
+
+
+def retune():
+    """Re-run Role 4's random search for each feature set, then compare.
+
+    The saved parameters were chosen with the current features, so judging a
+    new feature with them could undersell it. Here every feature set gets
+    its own best-of-30, from exactly the search 05_lightgbm.py runs (space,
+    number of settings and seed are imported, not copied). Picking the best
+    of 30 on the same folds flatters both sides equally, so the *difference*
+    stays a fair comparison; the absolute scores are slightly optimistic.
+    """
+    role4 = importlib.import_module("05_lightgbm")  # a name starting with a digit can't use `import`
+    raw = pd.read_csv(TRAIN_PATH)
+    y, groups = raw[TARGET], get_groups(raw)
+    scores, best_params = {}, {}
+    for name in RETUNE:
+        make_features, make_prep = VARIANTS[name]
+        pipe = Pipeline([("prep", make_prep()), ("model", LGBMClassifier(random_state=SEED, verbose=-1))])
+        search = RandomizedSearchCV(pipe, role4.PARAM_SPACE, n_iter=role4.N_ITER, scoring="accuracy",
+                                    cv=get_cv(), random_state=SEED, refit=False)
+        search.fit(make_features(raw).drop(columns=[TARGET]), y, groups=groups)
+        best = search.best_index_
+        best_params[name] = search.best_params_
+        scores[name] = pd.Series([search.cv_results_[f"split{i}_test_score"][best]
+                                  for i in range(get_cv().get_n_splits())])
+        short = {k.removeprefix("model__"): v for k, v in search.best_params_.items()}
+        print(f"\n{name}: best of {role4.N_ITER} = {scores[name].mean():.4f} ± "
+              f"{scores[name].std(ddof=0):.4f}\n   {short}")
+    base = scores["current features"]
+    print("\nRe-tuned LightGBM, each feature set with its own best parameters:")
+    for name in RETUNE[1:]:
+        gain = scores[name] - base
+        print(f"  {name}: {scores[name].mean():.4f} | gain {gain.mean() * 100:+.2f} pts (per fold "
+              f"{', '.join(f'{g * 100:+.2f}' for g in gain)}; better on {(gain > 0).sum()}/5)" + verdict(gain))
+    second_look(raw, best_params)
+
+
+def second_look(raw, best_params):
+    """Does a gain survive on other group splits? (exploration only)
+
+    Nine variants and two re-tunings were tried on the same 5 folds, so one
+    of them passing narrowly could be luck with those particular folds. Here
+    each feature set keeps the parameters chosen above and is scored on
+    N_RESHUFFLES new GroupKFold splits (groups shuffled, still never split).
+    The shared get_cv() folds remain the only ones used for logged scores.
+    Caveat: every split reuses the same passengers, so the 10 gains are not
+    independent and their spread understates the real uncertainty.
+    """
+    y, groups = raw[TARGET], get_groups(raw)
+    means = {name: [] for name in RETUNE}
+    for seed in range(N_RESHUFFLES):
+        cv = GroupKFold(n_splits=N_SPLITS, shuffle=True, random_state=seed)
+        for name in RETUNE:
+            make_features, make_prep = VARIANTS[name]
+            pipe = Pipeline([("prep", make_prep()), ("model", LGBMClassifier(random_state=SEED, verbose=-1))])
+            pipe.set_params(**best_params[name])
+            cv_scores = cross_validate(pipe, make_features(raw).drop(columns=[TARGET]), y, groups=groups,
+                                       cv=cv, scoring="accuracy", error_score="raise")
+            means[name].append(cv_scores["test_score"].mean())
+    base = np.array(means["current features"])
+    print(f"\nSecond look on {N_RESHUFFLES} reshuffled group splits "
+          f"(current features: {base.mean():.4f} on average):")
+    for name in RETUNE[1:]:
+        gain = np.array(means[name]) - base
+        print(f"  {name}: mean gain {gain.mean() * 100:+.2f} pts, from {gain.min() * 100:+.2f} to "
+              f"{gain.max() * 100:+.2f}; better on {(gain > 0).sum()}/{N_RESHUFFLES} splits")
+
+
 def main():
     raw = pd.read_csv(TRAIN_PATH)
     print("Group agreement (multi-person groups with >= 2 known values):")
@@ -285,11 +397,7 @@ def main():
             gain = s - base
             line = (f"  {name}: {s.mean():.4f} | gain {gain.mean() * 100:+.2f} pts (per fold "
                     f"{', '.join(f'{g * 100:+.2f}' for g in gain)}; better on {(gain > 0).sum()}/5)")
-            if decides:
-                se = gain.std(ddof=1) / np.sqrt(len(gain))
-                keep = gain.mean() > 2 * se
-                line += (f" -> {'KEEP' if keep else 'drop'}: needs > 2 x SE = {2 * se * 100:.2f} pts")
-            print(line)
+            print(line + (verdict(gain) if decides else ""))
 
 
 def _self_test():
@@ -335,6 +443,10 @@ def _self_test_richer():
     # A missing bill stays missing (the imputer fills it later); it is not guessed here.
     assert pd.isna(shares.loc[5, "RoomService_share"]) and shares.loc[5, "Spa_share"] == 0.5
     assert add_luxury_share(df)["LuxuryShare"].tolist() == [0.25, 0.0, 0.5, 0.0, 0.0, 0.5]
+    # A combination holds exactly the columns of its parts, with the same values.
+    both = combined(add_luxury_share, add_cabin_region)(df)
+    assert both["LuxuryShare"].tolist() == [0.25, 0.0, 0.5, 0.0, 0.0, 0.5]
+    assert both["CabinRegion"].fillna("?").tolist() == ["R0", "R0", "R1", "R5", "?", "R0"]
     # The variant preprocessor adds columns without touching the shared one.
     n_before = len(build_preprocessor().transformers[0][2])
     assert len(with_columns(numeric=["FamilySize"])().transformers[0][2]) == n_before + 1
@@ -343,4 +455,9 @@ def _self_test_richer():
 
 
 if __name__ == "__main__":
-    _self_test() if "--self-test" in sys.argv else main()
+    if "--self-test" in sys.argv:
+        _self_test()
+    elif "--retune" in sys.argv:
+        retune()
+    else:
+        main()

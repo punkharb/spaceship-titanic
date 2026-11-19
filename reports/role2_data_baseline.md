@@ -15,7 +15,8 @@ Last updated: 2026-11-19 · Status: Done
 4. Checks in `02_prepare.py`: before/after columns, the gaps each rule fills, every column accounted for, add_features() identical per fold vs the whole file, and no missing values after the preprocessor.
 5. Baselines in `03_baseline.py`: DummyClassifier(most_frequent) and Logistic Regression, both logged with `evaluate()`, plus a coefficient chart.
 6. **Next phase, issue #17 (group-aware imputation, with Role 1):** `02b_feature_experiments.py` prints how often group mates agree, then scores each candidate change with the final model on the same 5 shared folds, fold by fold, plus two untuned models as a check (runs in ~17 s). Result: dropped; `src/features.py` unchanged.
-7. **Next phase, issue #18 (richer features):** added six candidates to `02b_feature_experiments.py`, two per idea: family size from surnames (counted in the file, and counted in the travel group), cabin-number regions (fixed blocks of 300, and 7 learned quantile bins inside the Pipeline), and spending ratios (5 shares of TotalSpend, and one LuxuryShare). Each is scored on its own against the current features on the same 5 folds. Result: **none kept**; `src/features.py` unchanged, so no logged score changes.
+7. **Next phase, issue #18 (richer features):** added six candidates to `02b_feature_experiments.py`, two per idea: family size from surnames (counted in the file, and counted in the travel group), cabin-number regions (fixed blocks of 300, and 7 learned quantile bins inside the Pipeline), and spending ratios (5 shares of TotalSpend, and one LuxuryShare). Each is scored on its own against the current features on the same 5 folds. Result: none passes alone; `src/features.py` unchanged, so no logged score changes.
+8. **Issue #18 follow-up:** tested the ideas together (3 combinations), then repeated Role 4's random search for the two most promising feature sets (`python 02b_feature_experiments.py --retune`), and re-checked them on 10 reshuffled group splits. Result: LuxuryShare + CabinRegion gives a small gain of about +0.25 pts that passes the rule narrowly. **Not adopted yet: the team decides** (section 9).
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -36,9 +37,11 @@ Last updated: 2026-11-19 · Status: Done
 | Group fill (#17) not adopted | It lowered the final model by 0.55 pts (worse on 4/5 folds) and moved untuned models by between −0.17 and +0.14 pts; the rule needs a gain above 2 standard errors of the per-fold gains | `python 02b_feature_experiments.py` |
 | Paired decision rule: mean gain > 2 × standard error of the per-fold gains | Both sides use the same folds, so fold difficulty cancels; the fold-to-fold std of the scores (1.12 pts) would overstate the noise | Docstring of `02b_feature_experiments.py` |
 | Only HomePlanet and Side were candidates for group fill (Deck tested as a variant) | Among multi-person groups with ≥ 2 known values, they agree in 100% (train and test); Deck 69.2% / 64.2%, Destination 47.7% / 50.0%, CryoSleep 40.5% / 41.3%, Age 1.5% / 1.6% (train / test) | Printed by `python 02b_feature_experiments.py` |
-| Richer features (#18) not adopted: none of the six | With the final model, five lower accuracy (−0.13 to −0.35 pts) and the best, LuxuryShare, gains +0.14 pts where the rule needs > 0.33 pts | Table in section 4 |
+| Richer features (#18): none of the six adopted on its own | With the final model, five lower accuracy (−0.13 to −0.35 pts) and the best, LuxuryShare, gains +0.14 pts where the rule needs > 0.33 pts | Table in section 4 |
 | Two versions of each #18 idea | Each idea has an obvious weakness that a second version removes: the surname count depends on file size (mean 5.43 in train vs 3.56 in test), fixed bin edges are arbitrary, and five shares add five correlated columns | Printed by `python 02b_feature_experiments.py` |
 | LuxuryShare not adopted although it adds +2.17 pts to Logistic Regression | The rule was fixed before the test: the final model decides. Shares are a division of two columns, which a linear model cannot build itself but trees can approximate with splits. Adding it would change the features of every model for a gain the final model does not show | Table in section 4 |
+| LuxuryShare + CabinRegion found but not adopted in this PR | The gain is real but small (+0.25 pts, about 22 of 8,693 passengers) and passes by a hair (0.253 vs 0.248 needed). Adopting changes `src/features.py`, so 03–07 must be re-run, LightGBM re-tuned and `submission.csv` rebuilt, which is Role 1's review and other roles' scripts | Follow-up tables in section 4 |
+| Second look on 10 reshuffled group splits | Nine variants and two re-tunings were tried on the same 5 folds, so a narrow pass could be luck with those folds | `second_look()` in `02b_feature_experiments.py` |
 | #18 candidates live in `02b_feature_experiments.py`, not `src/features.py` | An unproven feature should not touch the shared contract; nothing in 03–07 had to be re-run | — |
 
 ## 4. Results
@@ -85,6 +88,26 @@ Fit time changes slightly with each run; the values above are the ones in the co
 - Cabin regions (train): transported rate by block of 300 is R0 54%, R1 41%, R2 54%, R3 61%, R4 42%, R5 41%, R6 44% (n = 3,560 / 1,488 / 976 / 992 / 938 / 460 / 80). The pattern is real, but trees already split on CabinNum directly.
 - Spending shares (train, spenders only), transported vs not: FoodCourt 41% vs 15%, ShoppingMall 30% vs 14%, RoomService 12% vs 27%, Spa 9% vs 24%, VRDeck 10% vs 23%.
 
+**Issue #18 follow-up 1: features together** (same run, saved LightGBM parameters):
+
+| Combination | Tuned LightGBM (decides) | Needs > 2 × SE | Verdict | Default LightGBM | Logistic Regression |
+|---|---|---|---|---|---|
+| LuxuryShare + CabinRegion (fixed 300) | 0.8132 (−0.10 pts, 1/5) | 0.26 pts | drop | +0.25 (4/5) | +2.10 (5/5) |
+| LuxuryShare + FamilyInGroup | 0.8143 (+0.01 pts, 2/5) | 0.20 pts | drop | +0.20 (4/5) | +2.22 (5/5) |
+| LuxuryShare + CabinRegion + FamilyInGroup | 0.8126 (−0.16 pts, 2/5) | 0.31 pts | drop | +0.20 (3/5) | +2.12 (5/5) |
+
+**Issue #18 follow-up 2: LightGBM re-tuned per feature set** (`python 02b_feature_experiments.py --retune`; Role 4's search space, 30 settings, same seed, shared folds):
+
+| Feature set | Best of 30 | Gain vs current (per fold) | Needs > 2 × SE | Verdict | 10 reshuffled splits |
+|---|---|---|---|---|---|
+| Current features | 0.8142 ± 0.0112 (same parameters as saved) | – | – | – | 0.8112 on average |
+| + LuxuryShare | 0.8156 ± 0.0102 (same parameters as saved) | +0.14 pts (+0.17, −0.35, +0.12, +0.06, +0.69) | 0.33 pts | drop | +0.22 pts, better on 9/10 |
+| + LuxuryShare + CabinRegion | 0.8167 ± 0.0102 | +0.25 pts (+0.12, +0.46, −0.17, +0.40, +0.46) | 0.25 pts | **keep (narrowly: 0.253 vs 0.248)** | +0.26 pts, better on 9/10 |
+
+- Best parameters for LuxuryShare + CabinRegion: learning_rate 0.05, n_estimators 500, num_leaves 15, max_depth −1, min_child_samples 10, subsample 1.0, colsample_bytree 0.6.
+- Reading: the gain is small but consistent, about **+0.25 pts** (roughly 22 of 8,693 passengers). On the reshuffled splits it ranged from −0.16 to +0.44 pts.
+- Caveat: the reshuffled splits reuse the same passengers, so the 10 gains are not independent. They are exploration only; every logged score still uses `get_cv()`.
+
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
 |---|---|---|
@@ -108,7 +131,8 @@ Fit time changes slightly with each run; the values above are the ones in the co
 - Honest caveat: the feature choices were made from EDA on all of train.csv, target included. This is standard practice and the same for every model, so the comparison stays fair. The absolute CV scores may be very slightly optimistic.
 - The independent leakage review (leakage-reviewer agent) found no leakage and no blockers. I fixed its should-fix (a hard-coded fold count, now `N_SPLITS`) and its minor notes.
 - Issue #18: no candidate reads the target. Shares and fixed regions are row-wise; FamilyInGroup is counted inside the travel group, which GroupKFold keeps in one fold; the learned bin edges sit inside the Pipeline. FamilySize is the exception: a surname count over the whole file also counts passengers in the validation fold. It uses no target, but it is one more reason not to adopt it.
-- Issue #18: the keep rule and the deciding model were fixed before any candidate was scored, and all six results are reported, not only the best one. Testing six candidates makes a lucky pass more likely, so a marginal pass would have needed a second look; none passed.
+- Issue #18: the keep rule and the deciding model were fixed before any candidate was scored, and all six results are reported, not only the best one. Testing six candidates makes a lucky pass more likely, so a marginal pass needs a second look. One did pass narrowly in the follow-up (LuxuryShare + CabinRegion after re-tuning), so I repeated the comparison on 10 reshuffled group splits before believing it: +0.26 pts, better on 9/10.
+- The re-tuning check gives every feature set its own best-of-30 from the same search, so the comparison is like for like. Best-of-30 on the same folds is slightly optimistic for both sides (nested CV: 0.8109 vs 0.8142), which is why I report the difference, not the new absolute score.
 
 ## 7. Problems and how I fixed them
 - The dummy scored 49.6%, not the expected 50.4%. The majority class flips in one fold. I explained this in the output and silenced the expected precision 0/0 warning for the dummy only.
@@ -138,15 +162,18 @@ Fit time changes slightly with each run; the values above are the ones in the co
 | Does the model generalise to test? | Train and test distributions match: at most 1.7 pp difference in category shares, and SMD < 0.02 for numeric columns. |
 | Did you try filling gaps from travel-group members? | Yes (issue #17). HomePlanet and Side agree in 100% of groups, so the fill is very likely correct, but it did not improve CV: −0.55 pts for the final model (worse on 4/5 folds) and between −0.17 and +0.14 pts for untuned models. We kept the simpler pipeline. |
 | How did you test it without leakage? | The fill sat inside the Pipeline and only used group mates in the same batch; GroupKFold keeps a group in one fold, so nothing crossed folds and the target was never read. |
-| You planned richer features. What happened? | We tested six (issue #18): two family-size counts from surnames, two kinds of cabin region, and two kinds of spending ratio. With the final model five lowered accuracy by 0.13–0.35 pts and the best, LuxuryShare, gained +0.14 pts where our rule needed more than 0.33. None was kept. |
+| You planned richer features. What happened? | We tested six (issue #18): two family-size counts from surnames, two kinds of cabin region, and two kinds of spending ratio. With the final model five lowered accuracy by 0.13–0.35 pts and the best, LuxuryShare, gained +0.14 pts where our rule needed more than 0.33. Tested together and with LightGBM re-tuned, LuxuryShare + cabin regions gained about +0.25 pts, which passes narrowly and held on 9 of 10 reshuffled splits. |
 | Why did they not help? | The information was already there. Family-in-group equals GroupSize for 87.3% of passengers; trees already split on CabinNum; and trees can approximate a ratio from the spending columns. A new column that repeats old information mostly adds noise. |
 | Spending shares gave Logistic Regression +2 points. Why not keep them? | The rule, set before testing, was that the final model decides, and LightGBM gained only +0.14 pts (within noise). A linear model cannot divide two columns itself, so it benefits; trees already can. Logistic Regression would still be about 2 pts behind LightGBM (0.7958 vs 0.8142). |
 | Why 2 standard errors and not just "higher is better"? | With 5 folds a gain of a few tenths of a point appears by chance. The same folds are used on both sides, so we look at the per-fold gains and ask whether their mean is clearly above zero. |
-| Is a negative result a wasted phase? | No. It shows the 0.8142 is not left on the table by weak features, and the pipeline stays simpler (29 model inputs). |
+| Is a near-zero result a wasted phase? | No. It shows little accuracy is left on the table by the features: the best we found is about +0.25 pts, roughly 22 passengers in 8,693. |
+| Why re-tune before judging a feature? | The saved parameters were chosen with the current features, so they can undersell a new one. We gave each feature set the same 30-setting search and compared best with best. |
+| Why reshuffled splits if everyone must use the same folds? | The shared folds are for every logged score. The reshuffles are only a check that a narrow pass was not luck with those five folds; groups are still never split. |
 
 ## 9. Open items / handover
 - Issue #17 closed as **not adopted** (evidence above). 
-- Issue #18 (richer features) done: six candidates tested, **none adopted** (table in section 4). `src/features.py`, `results/results.csv` and `submission.csv` are unchanged, so nobody has to re-run anything.
+- Issue #18 (richer features): six candidates and three combinations tested (section 4). Nothing is adopted in this PR: `src/features.py`, `results/results.csv` and `submission.csv` are unchanged.
+- **Open decision for Role 1 and the team:** adopt LuxuryShare + CabinRegion (about +0.25 pts)? If yes, I add both to `src/features.py` in a separate PR, then 03–07 are re-run (04 and 05 re-tune, 07 rebuilds `submission.csv`) and the reports and slides get the new numbers. It should be decided before issue #19 starts, so new models and blends are built on the final features.
 - For Role 5: the #18 table is ready for the "what we tried in the next phase" slide.
 - `src/features.py` was merged in PR #7 after Role 1 approved it. Roles 3 and 4 reuse it unchanged: `04_random_forest.py` and `05_lightgbm.py` both build `X = add_features(df).drop(columns=[TARGET])` and `Pipeline([("prep", build_preprocessor()), ("model", ...)])`.
 - **How the tuned models compare with my baseline** (from `results/results.csv`, same folds):
