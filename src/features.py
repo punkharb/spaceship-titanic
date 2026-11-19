@@ -9,6 +9,8 @@ Two steps, kept apart on purpose:
   used inside a Pipeline, so it is fitted on the training folds only.
 
 Every choice here is backed by results/eda_findings.txt (01_explore.py).
+The two features added in issue #18 (LuxuryShare, CabinRegion) are backed by
+the paired test in 02b_feature_experiments.py.
 """
 import numpy as np
 import pandas as pd
@@ -20,6 +22,12 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.config import ID_COL
 
 SPEND_COLUMNS = ["RoomService", "FoodCourt", "ShoppingMall", "Spa", "VRDeck"]
+# Issue #18: these three bills are higher for passengers who were NOT
+# transported; FoodCourt and ShoppingMall go the other way.
+LUXURY_COLUMNS = ["RoomService", "Spa", "VRDeck"]
+# Cabin numbers per CabinRegion. A round width picked before any score was
+# looked at; no other width was tried, so it was not tuned to the folds.
+REGION_WIDTH = 300
 CHILD_AGE = 13  # EDA: 0 of 806 under-13s in train spent anything; the youngest spender is 13
 
 NUMERIC_FEATURES = [
@@ -30,6 +38,9 @@ NUMERIC_FEATURES = [
     # few huge bills from dominating the scaled Logistic Regression.
     *[f"{c}_log" for c in SPEND_COLUMNS],
     "TotalSpend_log",
+    # #18: *what* the money went on, separately from how much. A ratio of two
+    # columns is something a linear model cannot build for itself.
+    "LuxuryShare",
 ]
 CATEGORICAL_FEATURES = [
     "HomePlanet",
@@ -38,6 +49,7 @@ CATEGORICAL_FEATURES = [
     "VIP",
     "Deck",        # EDA: 38 pp spread in transported rate between decks
     "Side",
+    "CabinRegion",  # #18: CabinNum in blocks of 300; transported rate 41-61% by block
 ]
 DROP_COLUMNS = [
     ID_COL,        # an ID; its travel group is used via GroupSize and the CV folds
@@ -48,12 +60,16 @@ DROP_COLUMNS = [
 
 
 def _split_cabin(df):
-    """Cabin 'Deck/Num/Side' (e.g. 'F/123/S') -> Deck, CabinNum, Side."""
+    """Cabin 'Deck/Num/Side' (e.g. 'F/123/S') -> Deck, CabinNum, Side, CabinRegion."""
     # reindex: always three columns, even for a batch where every Cabin is missing.
     parts = df["Cabin"].str.split("/", expand=True).reindex(columns=[0, 1, 2])
     df["Deck"] = parts[0]
     df["CabinNum"] = pd.to_numeric(parts[1])
     df["Side"] = parts[2]
+    # A fixed rule on the row's own number (0-299 -> R0, 300-599 -> R1, ...),
+    # so it is allowed here. A missing Cabin stays missing and is imputed later.
+    region = "R" + (df["CabinNum"] // REGION_WIDTH).astype("Int64").astype(str)
+    df["CabinRegion"] = region.where(df["CabinNum"].notna())
     return df
 
 
@@ -93,6 +109,14 @@ def add_features(df):
     df["TotalSpend"] = df[SPEND_COLUMNS].sum(axis=1, min_count=1)
     for c in SPEND_COLUMNS + ["TotalSpend"]:
         df[f"{c}_log"] = np.log1p(df[c])
+
+    # Share of the passenger's own spending that went on the luxury bills.
+    # Row-wise: only this row's bills are used. An unknown bill counts as 0
+    # on both sides of the division, the same way TotalSpend treats it, so
+    # the share is slightly off for passengers with a missing bill.
+    luxury = df[LUXURY_COLUMNS].sum(axis=1) / df["TotalSpend"]
+    luxury[df["TotalSpend"] == 0] = 0.0  # 0/0: spent nothing, so the share is 0
+    df["LuxuryShare"] = luxury
     return df
 
 

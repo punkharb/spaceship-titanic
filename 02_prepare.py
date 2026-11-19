@@ -25,9 +25,21 @@ def show_new_columns(raw, feat):
     new = [c for c in feat.columns if c not in raw.columns]
     print(f"   columns: {raw.shape[1]} raw -> {feat.shape[1]} after add_features()")
     print(f"   new: {new}")
-    example = feat.loc[0, ["Cabin", "Deck", "CabinNum", "Side", "GroupSize",
-                           "TotalSpend", "TotalSpend_log"]]
+    example = feat.loc[0, ["Cabin", "Deck", "CabinNum", "Side", "CabinRegion", "GroupSize",
+                           "TotalSpend", "TotalSpend_log", "LuxuryShare"]]
     print(f"   example (first passenger): {example.to_dict()}")
+
+
+def check_issue18_features(feat):
+    """LuxuryShare and CabinRegion (issue #18) hold what their definitions say."""
+    share = feat["LuxuryShare"].dropna()
+    assert share.between(0, 1).all(), "a share must be between 0 and 1"
+    assert (feat.loc[feat["TotalSpend"] == 0, "LuxuryShare"] == 0).all()
+    assert (feat["CabinRegion"].isna() == feat["Cabin"].isna()).all()
+    print(f"   LuxuryShare: between {share.min():.0f} and {share.max():.0f}, missing for "
+          f"{feat['LuxuryShare'].isna().sum()} passengers (imputed inside the Pipeline)")
+    print(f"   CabinRegion: {sorted(feat['CabinRegion'].dropna().unique())}, missing for "
+          f"{feat['CabinRegion'].isna().sum()} passengers (the ones with no Cabin)")
 
 
 def show_rule_fills(name, raw, feat):
@@ -86,6 +98,8 @@ def main():
     train, test = add_features(raw_train), add_features(raw_test)
 
     show_new_columns(raw_train, train)
+    check_issue18_features(train)
+    check_issue18_features(test)
     show_rule_fills("train", raw_train, train)
     show_rule_fills("test", raw_test, test)
     print("-> The logical rules (CryoSleep/children never spend; spenders are awake) fill "

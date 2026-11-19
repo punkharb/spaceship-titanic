@@ -53,7 +53,8 @@ def plot_coefficients(pipe, X, y, top=12):
     ax.barh(shown.index, shown, color=[BLUE if v > 0 else ORANGE for v in shown])
     ax.axvline(0, color="black", lw=0.8)
     ax.set_xlabel("Coefficient (scaled features; > 0 = more likely transported)")
-    ax.set_title("Deck C/B and Europa push towards transported; Spa and VRDeck spending away")
+    # Built from the coefficients, so the title can never disagree with the bars.
+    ax.set_title(f"{coefs.idxmax()} pushes most towards transported, {coefs.idxmin()} most away")
     fig.tight_layout()
     fig.savefig(PLOT_DIR / "09_logreg_coefficients.png", dpi=120)
     plt.close(fig)

@@ -2,7 +2,7 @@
 
 Each variant is scored with the final model (tuned LightGBM, its saved
 best_params_lightgbm.json, no re-tuning) on the same 5 shared get_cv()
-folds as the current features, and compared fold by fold. Same folds on
+folds as the features before issue #18, and compared fold by fold. Same folds on
 both sides make the comparison paired: fold difficulty cancels out, so the
 noise that matters is the spread of the per-fold *gains*, not the spread of
 the scores. Default LightGBM and Logistic Regression are run too, as a check
@@ -14,8 +14,18 @@ more than 2 standard errors of the per-fold gains (a rough 95% check).
 Candidates:
 - #17 group-aware imputation (GroupModeImputer).
 - #18 richer features, one at a time: family size from surnames, cabin-number
-  regions, spending shares. They live here, not in src/features.py, until
-  one of them earns its place.
+  regions, spending shares. Candidates live here, not in src/features.py,
+  until one earns its place.
+
+Outcome of #18: LuxuryShare + CabinRegion were ADOPTED into src/features.py.
+Read this honestly: with the saved parameters (the rule as first written)
+that combination is a "drop" in the default run below. It passes only in
+--retune, a check added after the first results were seen, and only
+narrowly. The team adopted it knowing that; see the Role 2 report.
+The baseline here is therefore "features before #18" (the shared
+preprocessor minus those two columns), so this script keeps reproducing
+the evidence for that decision. Numbers from the "tuned LightGBM" block
+depend on best_params_lightgbm.json and move when Role 4 re-tunes.
 
 Experiments are not logged to results.csv: they are decisions about the
 features, not models. Kept changes go into src/features.py, and 03-07 are
@@ -50,10 +60,11 @@ from sklearn.preprocessing import KBinsDiscretizer
 
 from src.config import ID_COL, N_SPLITS, RESULTS_DIR, SEED, TARGET, TEST_PATH, TRAIN_PATH
 from src.evaluation import get_cv, get_groups
-from src.features import SPEND_COLUMNS, add_features, build_preprocessor
+from src.features import REGION_WIDTH, SPEND_COLUMNS, add_features, build_preprocessor
 
 N_RESHUFFLES = 10   # extra group splits for the second look in --retune
-REGION_WIDTH = 300  # cabin numbers per region; fixed before looking at any score
+ADOPTED = ["LuxuryShare", "CabinRegion"]  # #18 winners, now made by add_features()
+BEFORE = "features before #18"            # the baseline every variant is compared with
 
 
 class GroupModeImputer(TransformerMixin, BaseEstimator):
@@ -102,7 +113,7 @@ def describe_fill(df, columns):
 def with_group_fill(columns):
     """Preprocessor variant: group fill first, then the shared preprocessor."""
     return lambda: Pipeline([("group_fill", GroupModeImputer(columns)),
-                             ("prep", build_preprocessor())])
+                             ("prep", with_columns()())])
 
 
 # ---------------------------------------------------------------------------
@@ -142,17 +153,6 @@ def add_family_in_group(df):
     return df
 
 
-def add_cabin_region(df):
-    """CabinRegion: CabinNum in fixed blocks of REGION_WIDTH (0-299 -> R0, ...).
-
-    A fixed rule on the row's own value, so it is allowed in add_features().
-    """
-    df = add_features(df)
-    region = "R" + (df["CabinNum"] // REGION_WIDTH).astype("Int64").astype(str)
-    df["CabinRegion"] = region.where(df["CabinNum"].notna())  # keep gaps as NaN
-    return df
-
-
 def add_spend_shares(df):
     """<column>_share: each bill as a fraction of the passenger's TotalSpend.
 
@@ -164,21 +164,6 @@ def add_spend_shares(df):
         share = df[c] / total
         share[total == 0] = 0.0  # 0/0: spent nothing, so every share is 0
         df[f"{c}_share"] = share
-    return df
-
-
-def add_luxury_share(df):
-    """LuxuryShare: RoomService + Spa + VRDeck as a fraction of TotalSpend.
-
-    One column instead of five: the EDA and the Logistic Regression both
-    show these three bills push towards 'not transported', while FoodCourt
-    and ShoppingMall push the other way.
-    """
-    df = add_features(df)
-    total = df["TotalSpend"]
-    share = df[["RoomService", "Spa", "VRDeck"]].sum(axis=1, min_count=1) / total
-    share[total == 0] = 0.0
-    df["LuxuryShare"] = share
     return df
 
 
@@ -195,8 +180,10 @@ def combined(*adders):
 
 
 def with_columns(numeric=(), categorical=(), extra=()):
-    """Preprocessor variant: the shared one plus the new columns.
+    """Preprocessor variant: the pre-#18 columns plus the new ones.
 
+    Starts from the shared preprocessor and removes the ADOPTED columns, so
+    every variant is compared with the features as they were before #18.
     New numeric columns get the same median + scaling, new categorical ones
     the same mode + one-hot, as every existing feature. `extra` adds whole
     transformers (used for bin edges that are learned inside the fold).
@@ -205,7 +192,7 @@ def with_columns(numeric=(), categorical=(), extra=()):
 
     def make():
         prep = build_preprocessor()
-        prep.transformers = [(name, steps, columns + more[name])
+        prep.transformers = [(name, steps, [c for c in columns if c not in ADOPTED] + more[name])
                              for name, steps, columns in prep.transformers] + list(extra)
         return prep
     return make
@@ -242,7 +229,7 @@ def describe_richer(train, test):
     multi = t[t["GroupSize"] > 1]
     one_name = multi.groupby(get_groups(multi))["Name"].agg(lambda n: _surname(n.to_frame()).nunique() == 1)
     print(f"   {one_name.mean():.1%} of multi-person train groups share one surname")
-    reg = add_cabin_region(train)
+    reg = add_features(train)
     rate = reg.groupby("CabinRegion")[TARGET].agg(["size", "mean"])
     print("   CabinRegion (train) size and transported rate: "
           + ", ".join(f"{r} n={int(v['size'])} {v['mean']:.0%}" for r, v in rate.iterrows()))
@@ -255,34 +242,32 @@ def describe_richer(train, test):
 
 # name -> (add_features function, preprocessor factory)
 VARIANTS = {
-    "current features": (add_features, build_preprocessor),
+    BEFORE: (add_features, with_columns()),
     "#17 group fill: HomePlanet, Side": (add_features, with_group_fill(["HomePlanet", "Side"])),
     "#17 group fill: + Deck": (add_features, with_group_fill(["HomePlanet", "Side", "Deck"])),
     "#18 family: FamilySize (surname in file)": (add_family_size, with_columns(numeric=["FamilySize"])),
     "#18 family: FamilyInGroup (surname in travel group)": (
         add_family_in_group, with_columns(numeric=["FamilyInGroup"])),
-    f"#18 cabin: fixed regions of {REGION_WIDTH}": (add_cabin_region, with_columns(categorical=["CabinRegion"])),
+    f"#18 cabin: fixed regions of {REGION_WIDTH}": (add_features, with_columns(categorical=["CabinRegion"])),
     "#18 cabin: learned regions (7 quantile bins, in Pipeline)": (
         add_features, with_columns(extra=[learned_regions()])),
     "#18 spending: 5 shares of TotalSpend": (
         add_spend_shares, with_columns(numeric=[f"{c}_share" for c in SPEND_COLUMNS])),
-    "#18 spending: LuxuryShare": (add_luxury_share, with_columns(numeric=["LuxuryShare"])),
+    "#18 spending: LuxuryShare": (add_features, with_columns(numeric=["LuxuryShare"])),
     # Together: the best version of each idea, in case they only help jointly.
-    "#18 combined: LuxuryShare + fixed regions": (
-        combined(add_luxury_share, add_cabin_region),
-        with_columns(numeric=["LuxuryShare"], categorical=["CabinRegion"])),
+    # This one is the shared preprocessor as it is now: the adopted features.
+    "#18 combined: LuxuryShare + fixed regions (ADOPTED)": (add_features, build_preprocessor),
     "#18 combined: LuxuryShare + FamilyInGroup": (
-        combined(add_luxury_share, add_family_in_group),
-        with_columns(numeric=["LuxuryShare", "FamilyInGroup"])),
+        add_family_in_group, with_columns(numeric=["LuxuryShare", "FamilyInGroup"])),
     "#18 combined: LuxuryShare + fixed regions + FamilyInGroup": (
-        combined(add_luxury_share, add_cabin_region, add_family_in_group),
+        add_family_in_group,
         with_columns(numeric=["LuxuryShare", "FamilyInGroup"], categorical=["CabinRegion"])),
 }
 
 # Feature sets worth the 2-minute re-tuning check: the only candidate with a
 # positive gain, and the best combination.
-RETUNE = ["current features", "#18 spending: LuxuryShare",
-          "#18 combined: LuxuryShare + fixed regions"]
+RETUNE = [BEFORE, "#18 spending: LuxuryShare",
+          "#18 combined: LuxuryShare + fixed regions (ADOPTED)"]
 
 
 def models(params):
@@ -338,7 +323,7 @@ def retune():
         short = {k.removeprefix("model__"): v for k, v in search.best_params_.items()}
         print(f"\n{name}: best of {role4.N_ITER} = {scores[name].mean():.4f} ± "
               f"{scores[name].std(ddof=0):.4f}\n   {short}")
-    base = scores["current features"]
+    base = scores[BEFORE]
     print("\nRe-tuned LightGBM, each feature set with its own best parameters:")
     for name in RETUNE[1:]:
         gain = scores[name] - base
@@ -369,9 +354,9 @@ def second_look(raw, best_params):
             cv_scores = cross_validate(pipe, make_features(raw).drop(columns=[TARGET]), y, groups=groups,
                                        cv=cv, scoring="accuracy", error_score="raise")
             means[name].append(cv_scores["test_score"].mean())
-    base = np.array(means["current features"])
+    base = np.array(means[BEFORE])
     print(f"\nSecond look on {N_RESHUFFLES} reshuffled group splits "
-          f"(current features: {base.mean():.4f} on average):")
+          f"({BEFORE}: {base.mean():.4f} on average):")
     for name in RETUNE[1:]:
         gain = np.array(means[name]) - base
         print(f"  {name}: mean gain {gain.mean() * 100:+.2f} pts, from {gain.min() * 100:+.2f} to "
@@ -388,11 +373,11 @@ def main():
     params = json.loads((RESULTS_DIR / "best_params_lightgbm.json").read_text())
     for model_name, make_model in models(params).items():
         scores = {name: fold_scores(f, p, make_model, raw) for name, (f, p) in VARIANTS.items()}
-        base = scores["current features"]
+        base = scores[BEFORE]
         decides = "decides" in model_name
-        print(f"\n{model_name}: current features {base.mean():.4f} ± {base.std(ddof=0):.4f}")
+        print(f"\n{model_name}: {BEFORE} {base.mean():.4f} ± {base.std(ddof=0):.4f}")
         for name, s in scores.items():
-            if name == "current features":
+            if name == BEFORE:
                 continue
             gain = s - base
             line = (f"  {name}: {s.mean():.4f} | gain {gain.mean() * 100:+.2f} pts (per fold "
@@ -437,20 +422,23 @@ def _self_test_richer():
     # Three people are called Lee, but only two of them travel together.
     assert add_family_size(df)["FamilySize"].fillna(-1).tolist() == [3, 3, 1, 3, -1, 1]
     assert add_family_in_group(df)["FamilyInGroup"].fillna(-1).tolist() == [2, 2, 1, 1, -1, 1]
-    assert add_cabin_region(df)["CabinRegion"].fillna("?").tolist() == ["R0", "R0", "R1", "R5", "?", "R0"]
+    assert add_features(df)["CabinRegion"].fillna("?").tolist() == ["R0", "R0", "R1", "R5", "?", "R0"]
     shares = add_spend_shares(df)
     assert shares["RoomService_share"].iloc[:5].tolist() == [0.25, 0.0, 0.5, 0.0, 0.0]
     # A missing bill stays missing (the imputer fills it later); it is not guessed here.
     assert pd.isna(shares.loc[5, "RoomService_share"]) and shares.loc[5, "Spa_share"] == 0.5
-    assert add_luxury_share(df)["LuxuryShare"].tolist() == [0.25, 0.0, 0.5, 0.0, 0.0, 0.5]
+    assert add_features(df)["LuxuryShare"].tolist() == [0.25, 0.0, 0.5, 0.0, 0.0, 0.5]
     # A combination holds exactly the columns of its parts, with the same values.
-    both = combined(add_luxury_share, add_cabin_region)(df)
-    assert both["LuxuryShare"].tolist() == [0.25, 0.0, 0.5, 0.0, 0.0, 0.5]
-    assert both["CabinRegion"].fillna("?").tolist() == ["R0", "R0", "R1", "R5", "?", "R0"]
-    # The variant preprocessor adds columns without touching the shared one.
-    n_before = len(build_preprocessor().transformers[0][2])
-    assert len(with_columns(numeric=["FamilySize"])().transformers[0][2]) == n_before + 1
-    assert len(build_preprocessor().transformers[0][2]) == n_before
+    both = combined(add_spend_shares, add_family_in_group)(df)
+    assert both["Spa_share"].iloc[5] == 0.5 and both["FamilyInGroup"].iloc[0] == 2
+    # The baseline is the shared preprocessor minus the adopted columns, and a
+    # variant adds to that baseline without touching the shared one.
+    shared = [c for _, _, columns in build_preprocessor().transformers for c in columns]
+    before = [c for _, _, columns in with_columns()().transformers for c in columns]
+    assert sorted(set(shared) - set(before)) == sorted(ADOPTED)
+    assert len(with_columns(numeric=["FamilySize"])().transformers[0][2]) \
+        == len(with_columns()().transformers[0][2]) + 1
+    assert [c for _, _, columns in build_preprocessor().transformers for c in columns] == shared
     print("Self-test passed: #18 features match the hand-checked answers.")
 
 
