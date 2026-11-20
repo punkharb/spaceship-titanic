@@ -13,6 +13,7 @@ Self-test: python 06_compare.py --self-test
 import sys
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import pandas as pd
 
 from src.config import PLOT_DIR, RESULTS_DIR
@@ -25,7 +26,12 @@ LABELS = {"dummy_most_frequent": "Dummy (most frequent)",
           "lightgbm_default": "LightGBM (default)",
           "lightgbm": "LightGBM (tuned)",
           "random_forest_nested": "Random Forest (nested CV)",
-          "lightgbm_nested": "LightGBM (nested CV)"}
+          "lightgbm_nested": "LightGBM (nested CV)",
+          "xgboost_default": "XGBoost (default)",
+          "xgboost": "XGBoost (tuned)",
+          "catboost_default": "CatBoost (default)",
+          "catboost": "CatBoost (tuned)",
+          "lgbm_rf_blend": "LightGBM + RF blend"}
 METRICS = {"precision_mean": "Precision", "recall_mean": "Recall", "f1_mean": "F1"}
 
 
@@ -154,7 +160,9 @@ def plot_accuracy(table, path):
 def plot_prf(table, path, top=3):
     """Three small panels (precision | recall | F1) for the top models."""
     models = _candidates(table).head(top).iloc[::-1]
-    colors = [INK if m == _verdict(table)[0]["model"] else NEUTRAL for m in models["model"]]
+    # Highlight the F1 leader, the model this chart's title is about.
+    best = models.loc[models["f1_mean"].idxmax()]  # computed, not assumed
+    colors = [INK if m == best["model"] else NEUTRAL for m in models["model"]]
     lo = models[list(METRICS)].min().min() - 0.02
     hi = models[list(METRICS)].max().max() + 0.02
 
@@ -166,10 +174,10 @@ def plot_prf(table, path, top=3):
                         ha="center", fontsize=9, color=INK)
         ax.set_ylim(-0.6, len(models) - 0.5)
         ax.set_xlim(lo, hi)
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=4))  # no labels colliding between panels
         ax.set_title(name, fontsize=10)
         _style(ax, [_label(m) for m in models["model"]], "")
     # Recall vs precision tells the slide which way each model errs.
-    best = models.loc[models["f1_mean"].idxmax()]  # computed, not assumed
     leans = "finding transported passengers (recall)" if best["recall_mean"] > best["precision_mean"] \
         else "being right when it says transported (precision)"
     fig.suptitle(f"{_label(best['model'])} leads on F1 and is slightly better at {leans}",
