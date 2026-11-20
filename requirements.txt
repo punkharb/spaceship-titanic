@@ -5,3 +5,6 @@ numpy==2.5.2
 scikit-learn==1.9.0
 matplotlib==3.11.2
 lightgbm==4.7.0
+# Issue #19 (04b_xgboost_catboost.py)
+xgboost==3.4.1
+catboost==1.2.10

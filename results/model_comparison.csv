@@ -1,9 +1,13 @@
 model,owner,accuracy,precision_mean,recall_mean,f1_mean,roc_auc_mean,fit_time_s
+catboost,Roles 3 and 2,0.8177 ± 0.0103,0.8141,0.8269,0.8203,0.9085,2.5505
+catboost_default,Roles 3 and 2,0.8174 ± 0.0106,0.8117,0.8304,0.8208,0.9084,3.9357
 lightgbm,Role 4,0.8142 ± 0.0112,0.8088,0.8267,0.8176,0.9025,0.1735
+xgboost,Roles 3 and 2,0.8115 ± 0.0101,0.8147,0.8098,0.8121,0.9028,0.6325
 lightgbm_nested,Role 1,0.8109 ± 0.0099,0.8056,0.8234,0.8142,0.9042,35.7492
 lightgbm_default,Role 4,0.8106 ± 0.0121,0.808,0.8188,0.8132,0.903,0.1002
 lgbm_rf_blend,Role 4,0.8093 ± 0.0129,0.8078,0.8154,0.8114,0.9022,1.3082
 random_forest,Role 3,0.8060 ± 0.0131,0.8129,0.7991,0.8057,0.895,2.0473
+xgboost_default,Roles 3 and 2,0.8028 ± 0.0142,0.8083,0.7975,0.8028,0.8966,0.2056
 random_forest_nested,Role 1,0.8025 ± 0.0133,0.8078,0.7979,0.8026,0.8944,53.2444
 random_forest_default,Role 3,0.8005 ± 0.0128,0.827,0.7638,0.794,0.8852,1.2509
 logistic_regression,Role 2,0.7741 ± 0.0071,0.7668,0.7922,0.7792,0.8525,0.0448

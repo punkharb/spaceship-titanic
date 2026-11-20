@@ -1,5 +1,5 @@
 # Role 2 – Data + baseline model (Champ)
-Last updated: 2026-11-19 · Status: Done
+Last updated: 2026-11-20 · Status: Done
 
 ## 1. Slide summary
 - Balanced target: **50.4%** transported (4,378 vs 4,315), so accuracy is a fair main metric.
@@ -177,6 +177,7 @@ Fit time changes slightly with each run; the values above are the ones in the co
 - Issue #17 closed as **not adopted** (evidence above). 
 - Issue #18 (richer features): six candidates and three combinations tested (section 4). Nothing is adopted in this PR: `src/features.py`, `results/results.csv` and `submission.csv` are unchanged.
 - **Decided, not adopted (2026-11-19):** Role 1 reviewed the adoption (PR #26) and recommended against it. PR #26 is closed and its branch `role2/adopt-luxury-region` is kept in case the team wants to revisit. Nobody has to re-run anything, and issue #19 can start on the current features.
+- Issue #19: I paired with Role 3 (Pat) on `04b_xgboost_catboost.py`. Tuned CatBoost 0.8177 ± 0.0103 and tuned XGBoost 0.8115 ± 0.0101, both within one std of LightGBM (0.8142), so the final model is unchanged. Details are in `reports/role3_random_forest.md`.
 - For Role 5: the #18 table is ready for the "what we tried in the next phase" slide.
 - `src/features.py` was merged in PR #7 after Role 1 approved it. Roles 3 and 4 reuse it unchanged: `04_random_forest.py` and `05_lightgbm.py` both build `X = add_features(df).drop(columns=[TARGET])` and `Pipeline([("prep", build_preprocessor()), ("model", ...)])`.
 - **How the tuned models compare with my baseline** (from `results/results.csv`, same folds):
