@@ -67,8 +67,9 @@ XGBOOST_SPACE = {
 }
 CATBOOST_SPACE = {
     "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
-    # Number of trees. 1000 is CatBoost's own default, so it has to be in the
-    # space, or tuning could only do worse than the default run.
+    # Number of trees. 1000 is CatBoost's default tree count, so it has to be
+    # in the space, or tuning could hardly match the default run. Caveat:
+    # LightGBM and XGBoost stop at 500 trees, so CatBoost has a small edge here.
     "model__iterations": [200, 300, 500, 1000],
     # Depth of the symmetric trees (default 6).
     "model__depth": [4, 6, 8],
@@ -124,8 +125,9 @@ def tune(name, X, y, groups):
     """Random search over the model's space, scored on the shared GroupKFold folds."""
     _, space, threads = MODELS[name]
     # The 150 fits run side by side (n_jobs=-1), so each single model uses one
-    # thread here. Both libraries give the same trees for any thread count, so
-    # this changes the run time only, not the scores.
+    # thread here. That changes the run time, not the scores: the best
+    # setting's search score equals its evaluate() score below, which runs
+    # with the default thread count.
     pipe = make_pipeline(name).set_params(**{threads: 1})
     search = RandomizedSearchCV(
         pipe, space, n_iter=N_ITER, scoring="accuracy", cv=get_cv(),

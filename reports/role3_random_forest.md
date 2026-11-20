@@ -30,7 +30,7 @@ Last updated: 2026-11-20 · Status: Done
 | Permutation importance on the validation folds, not `feature_importances_` | The built-in importance is measured on training rows and favours columns with many distinct values (e.g. CabinNum). Permutation measures accuracy on unseen passengers | `plots/10_random_forest_permutation_importance.png` |
 | #19: same Pipeline, folds and 30-setting budget for XGBoost and CatBoost | A difference in score must come from the model, not from better inputs or a bigger search | Issue #19 rules |
 | #19: CatBoost gets the shared one-hot columns, not raw categories | CatBoost can read categories directly, but rule 4 says one preparation step for every model | `build_preprocessor()` |
-| #19: 1000 iterations is in CatBoost's search space | It is CatBoost's default, so leaving it out would let tuning only do worse than the default run | Best: 1000 iterations |
+| #19: 1000 iterations is in CatBoost's search space | It is CatBoost's default, so leaving it out would let tuning hardly match the default run. Caveat: LightGBM and XGBoost are capped at 500 trees and both chose 500, so CatBoost has a small edge | Best: 1000 iterations. CatBoost's best setting with 500 iterations scores 0.8158, still within one std of LightGBM |
 | #19: XGBoost wrapped so it predicts True/False | XGBoost predicts 1/0 and the shared `evaluate()` expects True/False. The wrapper converts the answer only | `BoolXGBClassifier` in the script |
 | #19: final model stays LightGBM | The issue's rule is to switch only for a win larger than one std. CatBoost is +0.35 points with std 1.12 | Script output, section 4 below |
 | Parameters stored as plain lists, not scipy distributions | The JSON must match the logged params exactly. 07 checks this | `best_params_random_forest.json` = `params` in the `random_forest` row |
@@ -87,7 +87,7 @@ From `results/results.csv`, same folds and same 30-setting budget as the other t
 - **Confusion matrices (tuned, out-of-fold, rows = true False/True):** XGBoost `[[3509, 806], [833, 3545]]`, CatBoost `[[3488, 827], [758, 3620]]`.
 - Script output: "xgboost vs lightgbm: -0.28 points (within the fold-to-fold spread, std ~1.12 points)" and "catboost vs lightgbm: +0.35 points (within the fold-to-fold spread, std ~1.12 points)".
 - **Reading:** the three boosting libraries land within 0.62 points of each other, well inside the 1.12-point fold noise. The features, not the library, set the ceiling at about 81 to 82%.
-- CatBoost is the least overfit and barely needs tuning (+0.03 points over its default). It is also the slowest: about 15× LightGBM's fit time per fold.
+- CatBoost is the least overfit and barely needs tuning (+0.02 points over its default). It is also the slowest: about 15× LightGBM's fit time per fold.
 - **Decision:** neither model beats LightGBM by more than one std, so `07_final_model.py` and `submission.csv` stay unchanged (issue #19 rule).
 
 ## 5. Charts for the slides
@@ -105,6 +105,7 @@ From `results/results.csv`, same folds and same 30-setting budget as the other t
 - One logged row per model name (`evaluate()` replaces old rows), so `results.csv` can't hold a best-of-many result.
 - Known small optimism: the best of 30 settings is chosen on the same folds that score it, so the tuned score (and the +0.55-point gain over default) is a slight upper bound. LightGBM is tuned the same way, so RF vs LightGBM stays fair. Nested CV would remove this bias, at about 5× the cost.
 - Issue #19: XGBoost and CatBoost use the same `get_cv()` folds, the same preprocessing inside the Pipeline, `random_state=SEED` and the same 30-setting budget. test.csv is never read. Each tuned score from the search equals the score from `evaluate()` (0.8115 and 0.8177), so the thread settings used to speed up the search do not change any result.
+- Issue #19 caveat: CatBoost could use up to 1000 trees while LightGBM and XGBoost stop at 500 (and both picked 500). This does not change the verdict: CatBoost's best 500-iteration setting scores 0.8158, and its untuned default 0.8174. We did not re-tune LightGBM this late.
 - Issue #19 caveat: we have now compared five tuned candidates on the same folds. Picking the top one by 0.35 points would be choosing on noise, which is why the one-std rule keeps LightGBM.
 - Leakage review (leakage-reviewer agent, 2026-10-30): no leakage found. It reproduced the tuned score exactly, and 07 can rebuild the model from the saved params.
 
@@ -144,6 +145,7 @@ From `results/results.csv`, same folds and same 30-setting budget as the other t
 - **For Role 1 (07):** `random_forest` row and `best_params_random_forest.json` are in place. LightGBM currently has the higher accuracy.
 - **For Role 4:** `05_lightgbm.py` prints `≈`, which crashes on Windows when output is redirected. Its RF comparison also needs a re-run now that the `random_forest` row exists.
 - [x] Issue #19 (Roles 3 and 2 part): `04b_xgboost_catboost.py`, rows `xgboost_default`, `xgboost`, `catboost_default`, `catboost`, and `best_params_xgboost.json` / `best_params_catboost.json`.
+- **For Role 1:** `CLAUDE.md`'s project structure does not list `04b_xgboost_catboost.py` or `05c_blend.py` yet.
 - **For Role 1:** `requirements.txt` now pins `xgboost==3.4.1` and `catboost==1.2.10`, please review. `07_final_model.py` is unchanged. `06_compare.py` was re-run and now names CatBoost as most accurate (within one std) while 07 ships LightGBM. Please confirm that is the story for the slides.
 - **For Role 5/1 (`06_compare.py`):** add labels for `xgboost`, `xgboost_default`, `catboost` and `catboost_default` to `LABELS`, otherwise charts 12 and 13 show the raw names.
 - **For Role 5:** the chart and numbers above are slide-ready. The Q&A table can go into `notes/qa_prep.md`.
