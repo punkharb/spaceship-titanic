@@ -41,8 +41,10 @@ DS Model Training/
 ├── 02b_feature_experiments.py # Role 2 with Role 1 – does a feature change help? paired test on the shared folds (#17, #18)
 ├── 03_baseline.py            # Role 2 – Dummy + Logistic Regression
 ├── 04_random_forest.py       # Role 3 – Random Forest + tuning
+├── 04b_xgboost_catboost.py   # Roles 3 and 2 – XGBoost and CatBoost, same Pipeline/folds/budget (issue #19)
 ├── 05_lightgbm.py            # Role 4 – LightGBM + tuning
 ├── 05b_nested_cv.py          # Role 1 – nested CV: unbiased score for the tuned models (slow, issue #16)
+├── 05c_blend.py              # Role 4 – soft-voting blend of tuned LightGBM + Random Forest (issue #19)
 ├── 06_compare.py             # Role 5 (with Role 1) – comparison table and charts from results.csv
 ├── 07_final_model.py         # Role 1 – retrain the best model on all of train.csv, write submission.csv
 ├── plots/                    # all charts, numbered NN_name.png (used in slides)
@@ -57,7 +59,7 @@ DS Model Training/
 └── notes/                    # Role 5 – qa_prep.md
 ```
 
-`requirements.txt`: `pandas`, `numpy`, `scikit-learn`, `matplotlib`, `lightgbm`. Pin the versions the team actually uses.
+`requirements.txt`: `pandas`, `numpy`, `scikit-learn`, `matplotlib`, `lightgbm`, plus `xgboost` and `catboost` for `04b` (issue #19). Pin the versions the team actually uses.
 
 ---
 
