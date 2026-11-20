@@ -46,6 +46,7 @@ DS Model Training/
 ├── 05b_nested_cv.py          # Role 1 – nested CV: unbiased score for the tuned models (slow, issue #16)
 ├── 05c_blend.py              # Role 4 – soft-voting blend of tuned LightGBM + Random Forest (issue #19)
 ├── 06_compare.py             # Role 5 (with Role 1) – comparison table and charts from results.csv
+├── 06b_paired_check.py       # Role 1 – is a challenger clearly better than the final model? fold-by-fold check
 ├── 07_final_model.py         # Role 1 – retrain the best model on all of train.csv, write submission.csv
 ├── plots/                    # all charts, numbered NN_name.png (used in slides)
 ├── results/                  # results.csv, best_params_<model>.json, eda_findings.txt

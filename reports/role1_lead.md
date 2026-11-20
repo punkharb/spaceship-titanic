@@ -1,9 +1,9 @@
 # Role 1 – Lead / integrator (Pun)
-Last updated: 2026-11-15 · Status: Done
+Last updated: 2026-11-20 · Status: Done
 
 ## 1. Slide summary
 - **Final model: LightGBM**, CV accuracy **0.8142 ± 0.0112** (ROC-AUC 0.9025), retrained on all 8,693 rows → `submission.csv` (4,277 rows).
-- LightGBM vs Random Forest (0.8060 ± 0.0131) is within one std, but LightGBM is ~12× faster to fit (0.17 s vs 2.05 s per fold) → best on both counts.
+- Fold by fold (`06b_paired_check.py`), LightGBM **clearly** beats Random Forest (+0.82 pts, better on all 5 folds) and fits ~12× faster. CatBoost (0.8177) is +0.35 pts ahead of LightGBM but **not** a clear win (needs > 0.36 pts), so LightGBM stays the final model.
 - The whole pipeline 01→07 (including 06_compare) re-runs from a clean checkout in ~196 s with **identical** scores, parameters, comparison table, 13 plots and submission.
 - Every model is validated on the **same 5 GroupKFold folds**, grouped by travel group (`gggg` of `PassengerId`).
 - Every model is scored by **one function**, `evaluate()`: accuracy, precision, recall, F1, ROC-AUC (mean ± std) and fit time, logged to `results/results.csv`.
@@ -26,6 +26,8 @@ Last updated: 2026-11-15 · Status: Done
 11. Final clean run on 2026-10-31 after `06_compare.py` was merged: all 7 scripts exit 0; `results.csv` metrics, both `best_params` files, `model_comparison.csv`, `eda_findings.txt`, all 13 plots and `submission.csv` (byte for byte) identical to `main`.
 
 12. `05b_nested_cv.py` (issue #16): for each of the 5 shared outer folds, re-runs 04/05's exact random search (same space, 30 settings, seed) on the other 4 folds with inner folds grouped by travel group, refits the best setting there and scores it on the unseen outer fold. Logged with `evaluate()` as `random_forest_nested` / `lightgbm_nested`. `06_compare.py` shows these rows but never treats them as rival models.
+13. `06b_paired_check.py` (after PR #28 added CatBoost): refits LightGBM, Random Forest and CatBoost with their saved best params on the 5 shared folds and compares each challenger with LightGBM fold by fold (clear win only if mean gain > 2 × standard error of the per-fold gains, the rule from `02b`).
+14. Made two extra Kaggle files on request, not committed: `submission_lightgbm.csv` (copy of `submission.csv`) and `submission_catboost.csv` (CatBoost with its saved params, built with `07`'s own functions). The two agree on 4,037 of 4,277 passengers (94.4%). The final model is still chosen by CV, not by Kaggle score.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -37,6 +39,7 @@ Last updated: 2026-11-15 · Status: Done
 | One row per model in results.csv (re-run replaces) | Re-runs before merging must not leave duplicates; comparison can't pick a stale or best-of-N row | Self-test: 2 runs of "dummy" → 1 row |
 | Final model = best tuned model by CV mean accuracy | Accuracy is the Kaggle metric; only models with a `best_params_*.json` are candidates, so baselines are never shipped | `choose_model()` in `07_final_model.py` |
 | Flag when top two are within one std | A gap smaller than fold-to-fold noise isn't a real win; the simpler/faster model is then defensible | Printed note in `07_final_model.py` |
+| Decide model switches fold by fold (2 × SE rule) | All models share the same folds, so fold difficulty cancels; the per-fold gain's spread is the right noise measure, and the one-std rule is too cautious | `06b_paired_check.py`: LightGBM vs RF clear (+0.82, 5/5), CatBoost vs LightGBM not clear (+0.35 vs 0.36 needed) |
 | Refit once on all train.csv, no re-tuning | More data for the final fit; tuning already happened in CV; test.csv never used for choices | `main()` in `07_final_model.py` |
 | Check submission before writing | Columns, 4,277 rows, True/False values and ids matching test.csv row for row | `check_submission()` |
 | Fail loudly on bad target or failed fold | Otherwise sklearn logs NaN scores silently | `error_score="raise"`, bool check on `y` |
@@ -74,6 +77,17 @@ Last updated: 2026-11-15 · Status: Done
 - Nested LightGBM (0.8109) is about the same as default LightGBM (0.8106): once the best-of-30 luck is removed, tuning adds almost nothing.
 - Nested `fit_time_s` (LightGBM 35.75 s, RF 53.24 s per outer fold) includes the whole inner search, so it is not comparable with the other rows.
 
+**Fold-by-fold check** (`python 06b_paired_check.py`, accuracy per shared fold, saved best params):
+
+| Model | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Mean |
+|---|---|---|---|---|---|---|
+| lightgbm (final) | 0.8281 | 0.8217 | 0.8189 | 0.7986 | 0.8038 | 0.8142 |
+| random_forest | 0.8194 | 0.8212 | 0.8074 | 0.7894 | 0.7929 | 0.8060 |
+| catboost | 0.8321 | 0.8269 | 0.8154 | 0.8055 | 0.8084 | 0.8177 |
+
+- Random Forest vs LightGBM: −0.82 pts (per fold −0.86, −0.06, −1.15, −0.92, −1.09; better on 0/5); threshold 0.39 → LightGBM is clearly better.
+- CatBoost vs LightGBM: +0.35 pts (per fold +0.40, +0.52, −0.35, +0.69, +0.46; better on 4/5); threshold 0.36 → not a clear win, LightGBM stays.
+
 ## 5. Charts for the slides
 | File in plots/ | One-line caption (the finding) | Suggested slide |
 |---|---|---|
@@ -103,7 +117,9 @@ Last updated: 2026-11-15 · Status: Done
 | Why one `evaluate()` for everyone? | Same folds, same metrics, same logging → numbers are comparable and traceable to `results.csv`. |
 | Why retrain on all of train.csv at the end? | CV already chose the model and parameters; the final fit uses all 8,693 rows for the best possible model, with no further tuning. |
 | How do you know test.csv didn't influence the model? | It is only read after the model is chosen and fitted, and is only passed to `predict()`. |
-| Why LightGBM? | Highest CV accuracy (0.8142) and about 12× faster to fit than Random Forest (0.17 s vs 2.05 s per fold). Its 0.8-point lead over Random Forest is within one std, so speed backs the choice too. |
+| Why LightGBM? | It clearly beats Random Forest fold by fold (+0.82 pts, better on all 5 folds) and fits about 12× faster. CatBoost is +0.35 pts ahead of it, but that is not a clear win (needs > 0.36 pts, and fold 3 goes the other way), and LightGBM fits about 15× faster than CatBoost. |
+| Why compare fold by fold instead of by ± std? | Every model uses the same 5 folds, so some folds are hard for all of them. Comparing per fold cancels that, and the spread of the per-fold gains is the right noise measure. |
+| Did you submit more than one model to Kaggle? | We made a CatBoost file for reference, but the final model was fixed by CV before looking at Kaggle; choosing by leaderboard score would use test.csv for model choice. |
 | Why tuned LightGBM, not the default? | Tuning added only 0.4 points (0.8142 vs 0.8106), within one std, so the default would be about as good. `07_final_model.py` only ships tuned models (those with saved best params), and the gap is honest to report as "not clearly real". |
 | Is the tuned score optimistic? | Slightly. Nested CV, where each outer fold is scored by a model tuned without it, gives LightGBM 0.8109 vs 0.8142 tuned (0.3 points) and Random Forest 0.8025 vs 0.8060 (0.4 points). |
 | What is nested CV? | Tuning is repeated inside each outer training part, so the fold used for scoring never influenced the choice of settings. It costs about 5× the fits (750 per model). |
