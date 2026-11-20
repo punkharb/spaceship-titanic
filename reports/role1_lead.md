@@ -4,7 +4,7 @@ Last updated: 2026-11-20 · Status: Done
 ## 1. Slide summary
 - **Final model: LightGBM**, CV accuracy **0.8142 ± 0.0112** (ROC-AUC 0.9025), retrained on all 8,693 rows → `submission.csv` (4,277 rows).
 - Fold by fold (`06b_paired_check.py`), LightGBM **clearly** beats Random Forest (+0.82 pts, better on all 5 folds) and fits ~12× faster. CatBoost (0.8177) is +0.35 pts ahead of LightGBM but **not** a clear win (needs > 0.36 pts), so LightGBM stays the final model.
-- The whole pipeline 01→07 (including 06_compare) re-runs from a clean checkout in ~196 s with **identical** scores, parameters, comparison table, 13 plots and submission.
+- The whole pipeline (all 12 scripts, 01→07 with the 02b, 04b, 05b, 05c and 06b extras) re-runs from a clean checkout in ~9 minutes with **identical** scores, parameters, 13 plots and submission (clean run 2026-11-20).
 - Every model is validated on the **same 5 GroupKFold folds**, grouped by travel group (`gggg` of `PassengerId`).
 - Every model is scored by **one function**, `evaluate()`: accuracy, precision, recall, F1, ROC-AUC (mean ± std) and fit time, logged to `results/results.csv`.
 - Preprocessing is refitted **inside each fold**, so validation rows never influence training.
@@ -28,6 +28,7 @@ Last updated: 2026-11-20 · Status: Done
 12. `05b_nested_cv.py` (issue #16): for each of the 5 shared outer folds, re-runs 04/05's exact random search (same space, 30 settings, seed) on the other 4 folds with inner folds grouped by travel group, refits the best setting there and scores it on the unseen outer fold. Logged with `evaluate()` as `random_forest_nested` / `lightgbm_nested`. `06_compare.py` shows these rows but never treats them as rival models.
 13. `06b_paired_check.py` (after PR #28 added CatBoost): refits LightGBM, Random Forest and CatBoost with their saved best params on the 5 shared folds and compares each challenger with LightGBM fold by fold (clear win only if mean gain > 2 × standard error of the per-fold gains, the rule from `02b`).
 14. Made two extra Kaggle files on request, not committed: `submission_lightgbm.csv` (copy of `submission.csv`) and `submission_catboost.csv` (CatBoost with its saved params, built with `07`'s own functions). The two agree on 4,037 of 4,277 passengers (94.4%). The final model is still chosen by CV, not by Kaggle score.
+15. Clean run for issue #19 on 2026-11-20 (run by Role 2 on Role 1's behalf, on a machine with xgboost and catboost installed): fresh checkout of `main` at `23e2210`, every file in `results/` and `plots/` and `submission.csv` deleted, then all 12 scripts run. All exit 0. Run order: 01, 02, 03, 04, 05, then 02b, 04b, 05b, 05c, 06, 06b, 07, because 02b, 05b, 05c and 06b read the `best_params` files that 04 and 05 write.
 
 ## 3. Key decisions and why
 | Decision | Why | Evidence (number, chart or source) |
@@ -65,6 +66,8 @@ Last updated: 2026-11-20 · Status: Done
 - Submission check: 4,277 rows, columns `PassengerId, Transported`, True/False with no gaps, ids identical and in the same order as `sample_submission.csv`.
 - Predicted transported share on test: **51.5%** (2,201 True / 2,076 False) vs 50.4% in train → no drift towards one class.
 - Final clean run times: 01 6 s, 02 4 s, 03 5 s, 04 118 s, 05 56 s, 06 2 s, 07 5 s (~196 s total).
+- Clean run 2026-11-20, all 12 scripts (run time per script): 01 4 s, 02 2 s, 03 3 s, 04 60 s, 05 40 s, 02b 29 s, 04b 121 s, 05b 238 s, 05c 16 s, 06 2 s, 06b 20 s, 07 2 s (537 s total).
+- Compared with the committed files: `results.csv` has 13 rows, no duplicates, and every metric and every `params` value is identical (largest difference 0). All 5 `best_params` files, `eda_findings.txt`, all 13 plots and `submission.csv` are byte for byte identical. Only `fit_time_s` and `date` differ, which depend on the machine and the day. `submission.csv`: 4,277 rows, `PassengerId, Transported`, True/False, no gaps.
 
 **Nested CV vs tuned score** (`python 05b_nested_cv.py`, ~7.5 min; scores in `results/results.csv`):
 
@@ -131,5 +134,6 @@ Last updated: 2026-11-20 · Status: Done
 - `06_compare.py` + comparison chart: joint with Role 5 (Bard), not started.
 - Check the technical slides with Role 5; rehearsal with the whole team.
 - Review follow-ups for owners (low severity, no leakage): **Role 4** – `05_lightgbm.py`:167 prints `≈`, which crashes on cp1252/cp874 consoles (use `~` like 04); report line 88 "cancels out" → "similar for both". **Roles 3 & 4** – add `error_score="raise"` to `RandomizedSearchCV`. **Role 2** – be ready to justify `CHILD_AGE = 13` (chosen from EDA, not the target).
+- A clean run must use dependency order, not file-name order: on a clean checkout `02b_feature_experiments.py` stops with FileNotFoundError before `05_lightgbm.py` has written `best_params_lightgbm.json`.
 - Re-run 01→07 only if a script changes again. `05b_nested_cv.py` is slow (~7.5 min) and only adds analysis rows; it does not change the final model or `submission.csv`.
 - Tell Role 5: slide 10 can now show the nested scores (chart 12 includes them).
